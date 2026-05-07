@@ -1,5 +1,9 @@
 -- CREAR SCRIPT CON GENERATE_SERIES
 
+-- Limpiar Tablas para evitar errores
+TRUNCATE TABLE Estadistica RESTART IDENTITY CASCADE;
+TRUNCATE TABLE Partido RESTART IDENTITY CASCADE;
+
 -- 1. Desactivar temporalmente triggers o índices complejos si los hubiera para acelerar la carga
 -- SET session_replication_role = 'replica'; 
 
@@ -18,13 +22,13 @@ FROM generate_series(1, 200000) AS s;
 -- 3. Generar 800.000 registros de Estadísticas
 -- Vinculamos cada estadística a un partido existente (1 a 200.000) y a un jugador (1 a 50)
 INSERT INTO Estadistica (id_partido, id_jugador, puntos, asistencias, rebotes)
-SELECT 
-    (floor(random() * 200000 + 1))::int, -- ID de partido válido
-    (floor(random() * 50 + 1))::int,     -- ID de jugador válido
-    (floor(random() * 30))::int,         -- Puntos aleatorios 0-30
-    (floor(random() * 10))::int,         -- Asistencias 0-10
-    (floor(random() * 15))::int          -- Rebotes 0-15
-FROM generate_series(1, 800000) AS s;
+   SELECT 
+       floor(random() * 200000 + 1)::int, -- Ahora sí existen hasta el 200,000
+       floor(random() * 15 + 1)::int,
+       floor(random() * 35)::int, 
+       floor(random() * 12)::int, 
+       floor(random() * 15)::int
+   FROM generate_series(1, 800000) AS s;
 
 -- 4. IMPORTANTE: Ejecutar ANALYZE para que el planificador conozca la nueva distribución de datos
 ANALYZE Partido;
