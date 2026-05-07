@@ -1,7 +1,7 @@
 -- AGREGACIÓN DE TABLA JERARQUÍA
 
 -- 1. Creación de la tabla jerárquica
-CREATE TABLE Jerarquia_Liga (
+CREATE TABLE IF NOT EXISTS Jerarquia_Liga (
     id_entidad SERIAL PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     tipo_entidad VARCHAR(50), -- Ej: 'Federacion', 'Asociacion', 'Liga', 'Division'

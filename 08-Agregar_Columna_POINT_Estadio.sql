@@ -1,11 +1,11 @@
 -- INCLUIR COLUMNA TIPO POINT
 
 -- 1. Agregar columna de tipo POINT a la tabla Estadio
-ALTER TABLE Estadio ADD COLUMN ubicacion POINT;
+ALTER TABLE Estadio ADD COLUMN IF NOT EXISTS ubicacion POINT;
 
 -- 2. Crear un índice GiST (Generalized Search Tree) sobre la columna.
 -- Este índice es altamente eficiente para búsquedas de proximidad o rangos espaciales.
-CREATE INDEX idx_estadio_ubicacion ON Estadio USING GIST (ubicacion);
+CREATE INDEX IF NOT EXISTS idx_estadio_ubicacion ON Estadio USING GIST (ubicacion);
 
 -- 3. Actualizando coordenadas para algunos estadios (Coordenadas aproximadas)
 -- Usamos el formato: POINT(longitud latitud)

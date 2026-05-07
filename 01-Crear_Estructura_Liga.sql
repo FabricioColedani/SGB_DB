@@ -1,6 +1,6 @@
 -- CREAR BASE DE DATOS
 CREATE DATABASE liga_basquet;
-\c liga_basquet;
+\c liga_basquet
 
 -- CREAR TABLAS
 CREATE TABLE Equipo (
