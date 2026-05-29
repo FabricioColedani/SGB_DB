@@ -90,12 +90,6 @@ SGB_DB/
 
 ## Checklist de Avance - Proyecto Integrador (Parte 2)
 
-
-
-Marquen con una `X` dentro de los corchetes `[ ]` (ej: `[x]`) las tareas completadas a medida que realicen los commits en el repositorio:
-
-
-
 ### A. Abstracción y Lógica Procedural
 
 - [ ] **1.** Categorizar correctamente la volatilidad de la función (`IMMUTABLE`, `STABLE` o `VOLATILE`) analizando el consumo de CPU.
