@@ -96,7 +96,7 @@ SGB_DB/
 
 - [ ] **2.** Diseñar el procedimiento almacenado principal para la tarea compleja de negocio.
 
-- [ ] **3.** Implementar la robustez de tipos en variables usando `%TYPE`, `%ROWTYPE` o `RECORD` (evitar tipos estáticos).
+- [x] **3.** Implementar la robustez de tipos en variables usando `%TYPE`, `%ROWTYPE` o `RECORD` (evitar tipos estáticos).
 
 
 
