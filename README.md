@@ -112,7 +112,7 @@ SGB_DB/
 
 ### C. Capa de Auditoría y Forense de Datos
 
-- [ ] **1.** Crear la tabla física `audit_logs` con los campos necesarios para metadatos del sistema.
+- [X] **1.** Crear la tabla física `audit_logs` con los campos necesarios para metadatos del sistema.
 
 - [ ] **2.** Implementar bloques estructurados `EXCEPTION` en los puntos críticos de los scripts.
 
