@@ -94,7 +94,7 @@ SGB_DB/
 
 - [ ] **1.** Categorizar correctamente la volatilidad de la función (`IMMUTABLE`, `STABLE` o `VOLATILE`) analizando el consumo de CPU.
 
-- [ ] **2.** Diseñar el procedimiento almacenado principal para la tarea compleja de negocio.
+- [x] **2.** Diseñar el procedimiento almacenado principal para la tarea compleja de negocio.
 
 - [x] **3.** Implementar la robustez de tipos en variables usando `%TYPE`, `%ROWTYPE` o `RECORD` (evitar tipos estáticos).
 
@@ -102,11 +102,11 @@ SGB_DB/
 
 ###  B. Gestión Avanzada de Transacciones
 
-- [ ] **1.** Asegurar la atomicidad global del procedimiento mediante sentencias explícitas de `COMMIT` y `ROLLBACK`.
+- [x] **1.** Asegurar la atomicidad global del procedimiento mediante sentencias explícitas de `COMMIT` y `ROLLBACK`.
 
-- [ ] **2.** Identificar el subproceso secundario propenso a fallas y aislarlo mediante la declaración de un `SAVEPOINT`.
+- [x] **2.** Identificar el subproceso secundario propenso a fallas y aislarlo mediante la declaración de un `SAVEPOINT`.
 
-- [ ] **3.** Implementar la lógica de reversión parcial (`ROLLBACK TO SAVEPOINT`) ante un error controlado.
+- [x] **3.** Implementar la lógica de reversión parcial (`ROLLBACK TO SAVEPOINT`) ante un error controlado.
 
 
 
