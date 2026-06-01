@@ -96,7 +96,7 @@ SGB_DB/
 
 - [ ] **2.** Diseñar el procedimiento almacenado principal para la tarea compleja de negocio.
 
-- [ ] **3.** Implementar la robustez de tipos en variables usando `%TYPE`, `%ROWTYPE` o `RECORD` (evitar tipos estáticos).
+- [x] **3.** Implementar la robustez de tipos en variables usando `%TYPE`, `%ROWTYPE` o `RECORD` (evitar tipos estáticos).
 
 
 
@@ -112,7 +112,7 @@ SGB_DB/
 
 ### C. Capa de Auditoría y Forense de Datos
 
-- [ ] **1.** Crear la tabla física `audit_logs` con los campos necesarios para metadatos del sistema.
+- [X] **1.** Crear la tabla física `audit_logs` con los campos necesarios para metadatos del sistema.
 
 - [ ] **2.** Implementar bloques estructurados `EXCEPTION` en los puntos críticos de los scripts.
 
