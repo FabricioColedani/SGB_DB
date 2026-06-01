@@ -114,7 +114,7 @@ SGB_DB/
 
 - [X] **1.** Crear la tabla física `audit_logs` con los campos necesarios para metadatos del sistema.
 
-- [ ] **2.** Implementar bloques estructurados `EXCEPTION` en los puntos críticos de los scripts.
+- [x] **2.** Implementar bloques estructurados `EXCEPTION` en los puntos críticos de los scripts.
 
 - [ ] **3.** Utilizar `GET STACKED DIAGNOSTICS` para extraer de forma limpia el `RETURNED_SQLSTATE` y el `MESSAGE_TEXT`.
 
