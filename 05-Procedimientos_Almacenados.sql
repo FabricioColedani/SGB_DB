@@ -12,9 +12,17 @@ CREATE OR REPLACE PROCEDURE agregar_jugador(
 )
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_sqlstate TEXT;
+    v_message TEXT;
 BEGIN
     INSERT INTO Jugador (nombre, apellido, fecha_nacimiento, posicion, altura, peso, id_equipo)
     VALUES (p_nombre, p_apellido, p_fecha_nac, p_posicion, p_altura, p_peso, p_id_equipo);
+EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
+    VALUES (current_user, v_sqlstate, v_message);
+    RAISE;
 END;
 $$;
 
@@ -25,6 +33,9 @@ CALL agregar_jugador('Mariano', 'López', '2003-05-12', 'Escolta', 1.88, 79, 2);
 CREATE OR REPLACE PROCEDURE estadisticas_jugador(p_id_jugador INT)
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_sqlstate TEXT;
+    v_message TEXT;
 BEGIN
     SELECT j.nombre, j.apellido, SUM(e.puntos) AS total_puntos,
            SUM(e.rebotes) AS total_rebotes, SUM(e.asistencias) AS total_asistencias
@@ -32,6 +43,11 @@ BEGIN
     JOIN Jugador j ON e.id_jugador = j.id_jugador
     WHERE j.id_jugador = p_id_jugador
     GROUP BY j.nombre, j.apellido;
+EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+    INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
+    VALUES (current_user, v_sqlstate, v_message);
+    RAISE;
 END;
 $$;
 
@@ -122,6 +138,8 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
         ROLLBACK TO SAVEPOINT sp_inscripcion;
+        INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
+        VALUES (current_user, v_sqlstate, v_message);
         RAISE NOTICE 'Fallo en la inscripción, se revierte sólo esa parte. SQLSTATE=% mensaje=%',
             v_sqlstate, v_message;
     END;
@@ -135,7 +153,10 @@ BEGIN
         v_jugador.apellido;
     RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
 EXCEPTION WHEN OTHERS THEN
+    GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
     ROLLBACK;
+    INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
+    VALUES (current_user, v_sqlstate, v_message);
     RAISE;
 END;
 $$;
