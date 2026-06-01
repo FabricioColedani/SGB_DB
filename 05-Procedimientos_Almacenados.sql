@@ -37,3 +37,99 @@ $$;
 
 -- Ejecutar procedimiento
 CALL estadisticas_jugador(1);
+
+-- Tablas de soporte para el proceso complejo de venta e inscripción
+CREATE TABLE IF NOT EXISTS VentaEntrada (
+    id_venta SERIAL PRIMARY KEY,
+    id_partido INT NOT NULL,
+    cantidad INT NOT NULL,
+    precio_unitario NUMERIC NOT NULL,
+    precio_total NUMERIC NOT NULL,
+    fecha_venta TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+    FOREIGN KEY (id_partido)
+        REFERENCES Partido (id_partido)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS InscripcionJugador (
+    id_inscripcion SERIAL PRIMARY KEY,
+    id_jugador INT NOT NULL,
+    id_partido INT NOT NULL,
+    estado VARCHAR(30) NOT NULL,
+    asiento VARCHAR(20),
+    fecha_inscripcion TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+    FOREIGN KEY (id_jugador)
+        REFERENCES Jugador (id_jugador)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE,
+    FOREIGN KEY (id_partido)
+        REFERENCES Partido (id_partido)
+        ON UPDATE CASCADE
+        ON DELETE CASCADE
+);
+
+-- 3. Proceso complejo: venta de entradas e inscripción de jugador a un partido
+-- Usa %ROWTYPE y RECORD, y consume la función creada por Fabri.
+CREATE OR REPLACE PROCEDURE procesar_venta_e_inscripcion(
+    p_id_partido INT,
+    p_id_jugador INT,
+    p_cantidad INT,
+    p_asiento VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_partido Partido%ROWTYPE;
+    v_jugador Jugador%ROWTYPE;
+    v_precio_total NUMERIC;
+    v_venta VentaEntrada%ROWTYPE;
+    v_inscripcion RECORD;
+BEGIN
+    -- Validar partido y jugador
+    SELECT * INTO v_partido
+    FROM Partido
+    WHERE id_partido = p_id_partido;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'El partido % no existe', p_id_partido;
+    END IF;
+
+    SELECT * INTO v_jugador
+    FROM Jugador
+    WHERE id_jugador = p_id_jugador;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'El jugador % no existe', p_id_jugador;
+    END IF;
+
+    IF p_cantidad <= 0 THEN
+        RAISE EXCEPTION 'La cantidad de entradas debe ser mayor que cero';
+    END IF;
+
+    -- Consumir la función creada por Fabri para calcular el precio total
+    v_precio_total := fabri_calcular_precio_entrada(p_id_partido, p_cantidad);
+
+    -- Guardar la venta
+    INSERT INTO VentaEntrada (id_partido, cantidad, precio_unitario, precio_total)
+    VALUES (p_id_partido, p_cantidad, v_precio_total / p_cantidad, v_precio_total)
+    RETURNING * INTO v_venta;
+
+    -- Registrar la inscripción del jugador al partido
+    INSERT INTO InscripcionJugador (id_jugador, id_partido, estado, asiento)
+    VALUES (p_id_jugador, p_id_partido, 'INSCRITO', p_asiento)
+    RETURNING id_inscripcion, id_jugador, id_partido, estado, fecha_inscripcion, asiento INTO v_inscripcion;
+
+    -- Resumen del proceso
+    RAISE NOTICE 'Venta registrada: id_venta=%, partido=%, jugador=% %',
+        v_venta.id_venta,
+        v_partido.id_partido,
+        v_jugador.nombre,
+        v_jugador.apellido;
+    RAISE NOTICE 'Inscripción registrada: id_inscripcion=%, estado=%',
+        v_inscripcion.id_inscripcion,
+        v_inscripcion.estado;
+    RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
+END;
+$$;
+
+-- Ejecutar procedimiento complejo
+CALL procesar_venta_e_inscripcion(1, 1, 2, 'A12');
