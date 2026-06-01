@@ -86,48 +86,65 @@ DECLARE
     v_venta VentaEntrada%ROWTYPE;
     v_inscripcion RECORD;
 BEGIN
-    -- Validar partido y jugador
-    SELECT * INTO v_partido
-    FROM Partido
-    WHERE id_partido = p_id_partido;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'El partido % no existe', p_id_partido;
-    END IF;
+    BEGIN
+        START TRANSACTION;
 
-    SELECT * INTO v_jugador
-    FROM Jugador
-    WHERE id_jugador = p_id_jugador;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'El jugador % no existe', p_id_jugador;
-    END IF;
+        -- Validar partido y jugador
+        SELECT * INTO v_partido
+        FROM Partido
+        WHERE id_partido = p_id_partido;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'El partido % no existe', p_id_partido;
+        END IF;
 
-    IF p_cantidad <= 0 THEN
-        RAISE EXCEPTION 'La cantidad de entradas debe ser mayor que cero';
-    END IF;
+        SELECT * INTO v_jugador
+        FROM Jugador
+        WHERE id_jugador = p_id_jugador;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'El jugador % no existe', p_id_jugador;
+        END IF;
 
-    -- Consumir la función creada por Fabri para calcular el precio total
-    v_precio_total := fabri_calcular_precio_entrada(p_id_partido, p_cantidad);
+        IF p_cantidad <= 0 THEN
+            RAISE EXCEPTION 'La cantidad de entradas debe ser mayor que cero';
+        END IF;
 
-    -- Guardar la venta
-    INSERT INTO VentaEntrada (id_partido, cantidad, precio_unitario, precio_total)
-    VALUES (p_id_partido, p_cantidad, v_precio_total / p_cantidad, v_precio_total)
-    RETURNING * INTO v_venta;
+        -- Consumir la función creada por Fabri para calcular el precio total
+        v_precio_total := fabri_calcular_precio_entrada(p_id_partido, p_cantidad);
 
-    -- Registrar la inscripción del jugador al partido
-    INSERT INTO InscripcionJugador (id_jugador, id_partido, estado, asiento)
-    VALUES (p_id_jugador, p_id_partido, 'INSCRITO', p_asiento)
-    RETURNING id_inscripcion, id_jugador, id_partido, estado, fecha_inscripcion, asiento INTO v_inscripcion;
+        -- Guardar la venta
+        INSERT INTO VentaEntrada (id_partido, cantidad, precio_unitario, precio_total)
+        VALUES (p_id_partido, p_cantidad, v_precio_total / p_cantidad, v_precio_total)
+        RETURNING * INTO v_venta;
 
-    -- Resumen del proceso
-    RAISE NOTICE 'Venta registrada: id_venta=%, partido=%, jugador=% %',
-        v_venta.id_venta,
-        v_partido.id_partido,
-        v_jugador.nombre,
-        v_jugador.apellido;
-    RAISE NOTICE 'Inscripción registrada: id_inscripcion=%, estado=%',
-        v_inscripcion.id_inscripcion,
-        v_inscripcion.estado;
-    RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
+        SAVEPOINT sp_inscripcion;
+
+        BEGIN
+            -- Registrar la inscripción del jugador al partido
+            INSERT INTO InscripcionJugador (id_jugador, id_partido, estado, asiento)
+            VALUES (p_id_jugador, p_id_partido, 'INSCRITO', p_asiento)
+            RETURNING id_inscripcion, id_jugador, id_partido, estado, fecha_inscripcion, asiento INTO v_inscripcion;
+
+            RAISE NOTICE 'Inscripción registrada: id_inscripcion=%, estado=%',
+                v_inscripcion.id_inscripcion,
+                v_inscripcion.estado;
+        EXCEPTION WHEN OTHERS THEN
+            ROLLBACK TO SAVEPOINT sp_inscripcion;
+            RAISE NOTICE 'No se pudo registrar la inscripción, se revierte sólo esa parte: %', SQLERRM;
+        END;
+
+        -- Resumen del proceso
+        RAISE NOTICE 'Venta registrada: id_venta=%, partido=%, jugador=% %',
+            v_venta.id_venta,
+            v_partido.id_partido,
+            v_jugador.nombre,
+            v_jugador.apellido;
+        RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
+
+        COMMIT;
+    EXCEPTION WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+    END;
 END;
 $$;
 
