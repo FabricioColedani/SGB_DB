@@ -322,6 +322,8 @@ CREATE OR REPLACE PROCEDURE agregar_jugador(
     p_id_equipo INT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = liga, public
 AS $$
 DECLARE
     v_sqlstate TEXT;
@@ -343,6 +345,8 @@ CALL agregar_jugador('Mariano', 'López', '2003-05-12', 'Escolta', 1.88, 79, 2);
 -- 2. Consultar estadísticas de un jugador
 CREATE OR REPLACE PROCEDURE estadisticas_jugador(p_id_jugador INT)
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = liga, public
 AS $$
 DECLARE
     v_sqlstate TEXT;
