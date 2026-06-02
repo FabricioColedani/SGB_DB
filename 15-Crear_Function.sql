@@ -7,6 +7,8 @@ CREATE OR REPLACE FUNCTION fn_promedio_puntos_jugador(
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = liga, public
 STRICT
 STABLE
 AS $$

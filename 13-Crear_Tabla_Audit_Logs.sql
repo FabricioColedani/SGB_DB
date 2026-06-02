@@ -11,7 +11,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- Función de auditoría para cambios DML en Jugador.
 CREATE OR REPLACE FUNCTION fn_audit_jugador_dml()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = liga, public
+AS $$
 BEGIN
     IF TG_OP = 'INSERT' THEN
         INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
