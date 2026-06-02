@@ -92,7 +92,7 @@ SGB_DB/
 
 ### A. Abstracción y Lógica Procedural
 
-- [ ] **1.** Categorizar correctamente la volatilidad de la función (`IMMUTABLE`, `STABLE` o `VOLATILE`) analizando el consumo de CPU.
+- [x] **1.** Categorizar correctamente la volatilidad de la función (`IMMUTABLE`, `STABLE` o `VOLATILE`) analizando el consumo de CPU.
 
 - [x] **2.** Diseñar el procedimiento almacenado principal para la tarea compleja de negocio.
 
@@ -116,15 +116,15 @@ SGB_DB/
 
 - [x] **2.** Implementar bloques estructurados `EXCEPTION` en los puntos críticos de los scripts.
 
-- [ ] **3.** Utilizar `GET STACKED DIAGNOSTICS` para extraer de forma limpia el `RETURNED_SQLSTATE` y el `MESSAGE_TEXT`.
+- [x] **3.** Utilizar `GET STACKED DIAGNOSTICS` para extraer de forma limpia el `RETURNED_SQLSTATE` y el `MESSAGE_TEXT`.
 
 
 
 ### D. Seguridad y Blindaje (Hardening)
 
-- [ ] **1.** Configurar la cabecera del proceso administrativo crítico bajo el contexto de `SECURITY DEFINER`.
+- [x] **1.** Configurar la cabecera del proceso administrativo crítico bajo el contexto de `SECURITY DEFINER`.
 
-- [ ] **2.** Blindar las funciones restringiendo el vector de ataque mediante la fijación explícita del parámetro `search_path`.
+- [x] **2.** Blindar las funciones restringiendo el vector de ataque mediante la fijación explícita del parámetro `search_path`.
 
 
 
