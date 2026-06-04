@@ -136,3 +136,29 @@ SGB_DB/
 
 - [x] **3.** Ejecutar la sentencia `CREATE TRIGGER` y verificar la reactividad ante eventos DML (INSERT, UPDATE o DELETE).
 
+## Checklist: Integración de Caché con Redis (Proyecto Integrador - Parte 3)
+
+### 1. Fase de Diseño y Selección
+- [ ] Identificamos 1 o 2 endpoints estratégicos para cachear (alta frecuencia de lectura, baja de escritura).
+- [ ] Listado de endpoints cacheados:
+  - *Endpoint 1:* `[RUTA ACÁ]`
+  - *Endpoint 2:* `[RUTA ACÁ - Opcional]`
+- [ ] Asegurar que el caso de uso soporta **consistencia eventual** (tolera desactualización de 1 o 2 minutos sin romper el sistema).
+
+
+### 2. Configuración (Setup)
+- [ ] Instalamos el cliente de Redis en nuestro proyecto.
+- [ ] Establecemos conexión exitosa con el servidor de Redis (Local o Cloud).
+- [ ] Implementamos **Manejo de Errores (Fallback)**: Si Redis se cae, la aplicación registra el error pero sigue funcionando, consultando directamente la base de datos principal.
+
+### 3. Implementación del Patrón Cache-Aside
+- [ ] **Consulta a la Caché:** El endpoint verifica primero si la clave existe en Redis.
+- [ ] **Cache HIT:** Si el dato existe, se retorna inmediatamente al cliente (se evita ir a la DB).
+- [ ] **Cache MISS (Consulta a la DB):** Si el dato NO existe, el sistema realiza la consulta a la base de datos principal (PostgreSQL, MongoDB, etc.).
+- [ ] **Población de la Caché:** Guardamos el resultado obtenido de la base de datos en Redis.
+- [ ] Devolver la respuesta final al cliente en todos los flujos.
+
+### 4. Buenas Prácticas Técnicas
+- [ ] **Nomenclatura (Namespacing):** Utilizamos el estándar de separación con dos puntos (`:`) para las claves. *(Ejemplo: `users:123` o `products:list:active`)*.
+- [ ] **Asignación de TTL:** Toda clave guardada en Redis tiene un tiempo de vida (Time-To-Live) configurado.
+
