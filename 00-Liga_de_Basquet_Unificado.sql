@@ -297,7 +297,14 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-CREATE OR REPLACE PROCEDURE estadisticas_jugador(p_id_jugador INT)
+CREATE OR REPLACE FUNCTION estadisticas_jugador(p_id_jugador INT)
+RETURNS TABLE (
+    nombre VARCHAR(100),
+    apellido VARCHAR(100),
+    total_puntos NUMERIC,
+    total_rebotes NUMERIC,
+    total_asistencias NUMERIC
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = liga, public
@@ -306,8 +313,9 @@ DECLARE
     v_sqlstate TEXT;
     v_message TEXT;
 BEGIN
-    SELECT j.nombre, j.apellido, SUM(e.puntos) AS total_puntos,
-           SUM(e.rebotes) AS total_rebotes, SUM(e.asistencias) AS total_asistencias
+    RETURN QUERY
+    SELECT j.nombre, j.apellido, COALESCE(SUM(e.puntos),0)::NUMERIC AS total_puntos,
+           COALESCE(SUM(e.rebotes),0)::NUMERIC AS total_rebotes, COALESCE(SUM(e.asistencias),0)::NUMERIC AS total_asistencias
     FROM Estadistica e
     JOIN Jugador j ON e.id_jugador = j.id_jugador
     WHERE j.id_jugador = p_id_jugador
@@ -340,7 +348,6 @@ DECLARE
     v_sqlstate TEXT;
     v_message TEXT;
 BEGIN
-    START TRANSACTION;
 
     SELECT * INTO v_partido
     FROM Partido
@@ -367,7 +374,6 @@ BEGIN
     VALUES (p_id_partido, p_cantidad, v_precio_unitario, v_precio_total)
     RETURNING * INTO v_venta;
 
-    SAVEPOINT sp_inscripcion;
     BEGIN
         INSERT INTO InscripcionJugador (id_jugador, id_partido, estado, asiento)
         VALUES (p_id_jugador, p_id_partido, 'INSCRITO', p_asiento)
@@ -378,14 +384,12 @@ BEGIN
             v_inscripcion.estado;
     EXCEPTION WHEN OTHERS THEN
         GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-        ROLLBACK TO SAVEPOINT sp_inscripcion;
         INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
         VALUES (current_user, v_sqlstate, v_message);
-        RAISE NOTICE 'Fallo en la inscripción, se revierte sólo esa parte. SQLSTATE=% mensaje=%',
+        RAISE NOTICE 'Fallo en la inscripción; se registró el error. SQLSTATE=% mensaje=%',
             v_sqlstate, v_message;
     END;
 
-    COMMIT;
 
     RAISE NOTICE 'Venta registrada: id_venta=%, partido=%, jugador=% %',
         v_venta.id_venta,
@@ -395,7 +399,6 @@ BEGIN
     RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
 EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-    ROLLBACK;
     INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
     VALUES (current_user, v_sqlstate, v_message);
     RAISE;
@@ -404,7 +407,7 @@ $$;
 
 -- Ejecutar procedimientos de ejemplo
 CALL agregar_jugador('Mariano', 'López', '2003-05-12', 'Escolta', 1.88, 79, 2);
-CALL estadisticas_jugador(1);
+SELECT * FROM estadisticas_jugador(1);
 CALL procesar_venta_e_inscripcion(1, 1, 2, 'A12');
 
 -- Scripts de generación masiva de datos
@@ -579,7 +582,7 @@ WITH RECURSIVE Jerarquia_Completa AS (
         tipo_entidad,
         id_padre,
         1 AS nivel,
-        nombre AS ruta_completa
+        nombre::VARCHAR AS ruta_completa
     FROM Jerarquia_Liga
     WHERE id_padre IS NULL
 
@@ -702,14 +705,3 @@ AFTER INSERT OR UPDATE OR DELETE ON Jugador
 FOR EACH ROW
 EXECUTE FUNCTION fn_audit_jugador_dml();
 
--- Consultas de monitoreo
-SELECT 
-    query, 
-    calls, 
-    total_exec_time, 
-    mean_exec_time, 
-    rows, 
-    (total_exec_time / sum(total_exec_time) OVER()) * 100 AS porcentaje_del_total
-FROM pg_stat_statements
-ORDER BY total_exec_time DESC
-LIMIT 5;

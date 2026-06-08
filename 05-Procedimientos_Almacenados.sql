@@ -32,7 +32,14 @@ $$;
 CALL agregar_jugador('Mariano', 'López', '2003-05-12', 'Escolta', 1.88, 79, 2);
 
 -- 2. Consultar estadísticas de un jugador
-CREATE OR REPLACE PROCEDURE estadisticas_jugador(p_id_jugador INT)
+CREATE OR REPLACE FUNCTION estadisticas_jugador(p_id_jugador INT)
+RETURNS TABLE (
+    nombre VARCHAR(100),
+    apellido VARCHAR(100),
+    total_puntos NUMERIC,
+    total_rebotes NUMERIC,
+    total_asistencias NUMERIC
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = liga, public
@@ -41,8 +48,9 @@ DECLARE
     v_sqlstate TEXT;
     v_message TEXT;
 BEGIN
-    SELECT j.nombre, j.apellido, SUM(e.puntos) AS total_puntos,
-           SUM(e.rebotes) AS total_rebotes, SUM(e.asistencias) AS total_asistencias
+    RETURN QUERY
+    SELECT j.nombre, j.apellido, COALESCE(SUM(e.puntos),0)::NUMERIC AS total_puntos,
+           COALESCE(SUM(e.rebotes),0)::NUMERIC AS total_rebotes, COALESCE(SUM(e.asistencias),0)::NUMERIC AS total_asistencias
     FROM Estadistica e
     JOIN Jugador j ON e.id_jugador = j.id_jugador
     WHERE j.id_jugador = p_id_jugador
@@ -55,8 +63,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- Ejecutar procedimiento
-CALL estadisticas_jugador(1);
+-- Ejecutar función
+SELECT * FROM estadisticas_jugador(1);
 
 -- 3. Proceso complejo: venta de entradas e inscripción de jugador con control transaccional
 CREATE TABLE IF NOT EXISTS VentaEntrada (
@@ -103,7 +111,6 @@ DECLARE
     v_sqlstate TEXT;
     v_message TEXT;
 BEGIN
-    START TRANSACTION;
 
     -- Validaciones previas
     SELECT * INTO v_partido
@@ -132,7 +139,6 @@ BEGIN
     VALUES (p_id_partido, p_cantidad, v_precio_unitario, v_precio_total)
     RETURNING * INTO v_venta;
 
-    SAVEPOINT sp_inscripcion;
     BEGIN
         INSERT INTO InscripcionJugador (id_jugador, id_partido, estado, asiento)
         VALUES (p_id_jugador, p_id_partido, 'INSCRITO', p_asiento)
@@ -143,14 +149,12 @@ BEGIN
             v_inscripcion.estado;
     EXCEPTION WHEN OTHERS THEN
         GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-        ROLLBACK TO SAVEPOINT sp_inscripcion;
         INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
         VALUES (current_user, v_sqlstate, v_message);
-        RAISE NOTICE 'Fallo en la inscripción, se revierte sólo esa parte. SQLSTATE=% mensaje=%',
+        RAISE NOTICE 'Fallo en la inscripción; se registró el error. SQLSTATE=% mensaje=%',
             v_sqlstate, v_message;
     END;
 
-    COMMIT;
 
     RAISE NOTICE 'Venta registrada: id_venta=%, partido=%, jugador=% %',
         v_venta.id_venta,
@@ -160,7 +164,6 @@ BEGIN
     RAISE NOTICE 'Precio total cobrado: %', v_precio_total;
 EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-    ROLLBACK;
     INSERT INTO audit_logs (usuario, sqlstate, mensaje_error)
     VALUES (current_user, v_sqlstate, v_message);
     RAISE;
