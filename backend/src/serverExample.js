@@ -4,6 +4,8 @@
  */
 
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { connectRedis, disconnectRedis, getRedisClient } from './config/redis.js';
 import { query, closeDb } from './config/db.js';
 import { 
@@ -29,7 +31,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicPath = path.resolve(__dirname, '../public');
+
 // ========== CONFIGURACIÓN DE MIDDLEWARES ==========
+
+// Servir frontend estático
+app.use(express.static(publicPath));
 
 // Middleware de logging
 app.use(loggingMiddleware());
@@ -46,23 +55,198 @@ app.use(sessionMiddleware('sgb-session', 3600));
 // Parsear JSON
 app.use(express.json());
 
+const cacheAsideWithMeta = async (key, loader, ttlSeconds = BENJA_CACHE_TTL) => {
+  const startTime = Date.now();
+  let redisOnline = true;
+
+  try {
+    const redis = getRedisClient();
+    const cached = await redis.get(key);
+
+    if (cached) {
+      const data = JSON.parse(cached);
+      return {
+        data,
+        meta: {
+          cacheHit: true,
+          source: 'Redis',
+          durationMs: Date.now() - startTime,
+          redisOnline
+        }
+      };
+    }
+
+    const data = await loader();
+    await redis.set(key, JSON.stringify(data), { EX: ttlSeconds });
+    return {
+      data,
+      meta: {
+        cacheHit: false,
+        source: 'PostgreSQL',
+        durationMs: Date.now() - startTime,
+        redisOnline
+      }
+    };
+  } catch (error) {
+    redisOnline = false;
+    console.warn(`Redis fallback para ${key}:`, error.message);
+
+    const data = await loader();
+    return {
+      data,
+      meta: {
+        cacheHit: false,
+        source: 'PostgreSQL',
+        durationMs: Date.now() - startTime,
+        redisOnline
+      }
+    };
+  }
+};
+
 // ========== RUTAS DE PRUEBA ==========
 
 /**
- * GET /health
- * Verifica que Redis está conectado
+ * GET /api/health
+ * Verifica si Redis está conectado y devuelve estado general.
  */
-app.get('/health', async (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
     const redis = req.redis;
     const pong = await redis.ping();
     res.json({
       status: 'ok',
-      redis: pong === 'PONG' ? 'connected' : 'disconnected',
+      redisOnline: pong === 'PONG',
+      source: pong === 'PONG' ? 'Redis' : 'PostgreSQL',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+    res.json({
+      status: 'ok',
+      redisOnline: false,
+      source: 'PostgreSQL',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * GET /api/equipos
+ * Retorna equipos con cache Redis.
+ */
+app.get('/api/equipos', async (req, res) => {
+  try {
+    const cacheKey = 'equipos:lista';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT id_equipo AS id,
+               nombre,
+               ciudad,
+               tecnico,
+               anio_fundacion
+        FROM Equipo
+        ORDER BY nombre;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 86400);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/equipos:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/posiciones
+ * Tabla de posiciones / clasificación del torneo.
+ */
+app.get('/api/posiciones', async (req, res) => {
+  try {
+    const cacheKey = 'posiciones:tabla';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT
+          e.id_equipo AS id,
+          e.nombre,
+          e.ciudad,
+          COUNT(p.id_partido) FILTER (
+            WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+               OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local)
+          ) AS victorias,
+          COUNT(p.id_partido) FILTER (
+            WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local < p.puntos_visitante)
+               OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante < p.puntos_local)
+          ) AS derrotas,
+          COALESCE(SUM(CASE
+            WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_local
+            WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_visitante
+            ELSE 0 END), 0) AS puntos_anotados,
+          COALESCE(SUM(CASE
+            WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_visitante
+            WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_local
+            ELSE 0 END), 0) AS puntos_recibidos,
+          COALESCE(SUM(CASE
+            WHEN (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+              OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local) THEN 2
+            ELSE 0 END), 0) AS puntos
+        FROM Equipo e
+        LEFT JOIN Partido p ON p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo
+        GROUP BY e.id_equipo, e.nombre, e.ciudad
+        ORDER BY puntos DESC, victorias DESC, (puntos_anotados - puntos_recibidos) DESC;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 120);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/posiciones:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/estadisticas/maximos-anotadores
+ * Retorna Top 10 de máximos anotadores.
+ */
+app.get('/api/estadisticas/maximos-anotadores', async (req, res) => {
+  try {
+    const cacheKey = 'estadisticas:maximos-anotadores';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          CONCAT(j.nombre, ' ', j.apellido) AS jugador,
+          e.nombre AS equipo,
+          COALESCE(SUM(est.puntos), 0) AS puntos_totales,
+          COUNT(DISTINCT est.id_partido) AS partidos
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
+        ORDER BY puntos_totales DESC
+        LIMIT 10;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 120);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/estadisticas/maximos-anotadores:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 

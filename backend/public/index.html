@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SGB - Consultas Rápidas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-cu8O+7y39dP1+js/clX/1n8Anx3+N7aCjV+6zL78yZSVz3xZq3r5qf50B8fG1M0M" crossorigin="anonymous">
+    <style>
+      body {
+        background: linear-gradient(180deg, #eef2ff 0%, #f8fafc 100%);
+        min-height: 100vh;
+      }
+      .page-shell {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .hero-card {
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(33,37,41,0.08);
+        backdrop-filter: blur(12px);
+      }
+      .status-badge {
+        min-width: 220px;
+      }
+      .latency-card {
+        min-width: 260px;
+      }
+      .table-wrap {
+        max-height: 520px;
+        overflow: auto;
+      }
+      .table thead th {
+        border-bottom-width: 2px;
+      }
+      .btn-hero {
+        min-width: 220px;
+      }
+      .section-title {
+        letter-spacing: 0.03em;
+      }
+      .info-chip {
+        font-size: 0.95rem;
+        letter-spacing: 0.02em;
+      }
+      @media (max-width: 767px) {
+        .latency-card,
+        .status-badge {
+          min-width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container py-5 page-shell">
+      <div class="card hero-card shadow-sm border-0 mb-4">
+        <div class="card-body">
+          <div class="row gy-3 align-items-center">
+            <div class="col-lg-8">
+              <h1 class="h3 mb-2 section-title">SGB - Consultas Rápidas</h1>
+              <p class="text-muted mb-3">Interactúa con el backend del proyecto y prueba Redis vs PostgreSQL en tiempo real. Perfecto para ver posiciones, máximos anotadores y planteles.</p>
+              <div class="d-flex flex-column flex-sm-row gap-2">
+                <button id="btnPosiciones" class="btn btn-primary btn-hero">Ver Tabla de Posiciones / Clasificación</button>
+                <button id="btnAnotadores" class="btn btn-success btn-hero">Ver Tabla de Máximos Anotadores</button>
+                <button id="btnEquipos" class="btn btn-outline-secondary btn-hero">Ver Planteles / Lista de Equipos</button>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="row g-3">
+                <div class="col-12">
+                  <div class="card latency-card shadow-sm border-0 h-100">
+                    <div class="card-body">
+                      <h5 class="card-title mb-3">Cronómetro de Latencia</h5>
+                      <p id="latencyText" class="display-6 mb-1 text-primary">Presiona un botón</p>
+                      <p id="latencyLabel" class="fw-semibold text-secondary mb-3"></p>
+                      <div id="latencyAlert" class="alert alert-light p-2 small" role="alert">Esperando consulta...</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="card status-badge shadow-sm border-0 h-100">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                      <div>
+                        <h6 class="card-title mb-1">Mesa de Control de Estado</h6>
+                        <p id="redisStatusText" class="mb-0 text-muted">Verificando estado de Redis...</p>
+                      </div>
+                      <span id="redisIndicator" class="badge bg-secondary rounded-pill">...</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm border-0">
+        <div class="card-body">
+          <h2 class="h5 mb-3" id="resultTitle">Resultado</h2>
+          <div id="resultInfo" class="mb-3 text-muted">Sin resultados aún.</div>
+          <div class="table-responsive table-wrap">
+            <table id="resultTable" class="table table-hover align-middle mb-0">
+              <thead class="table-light"></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const btnPosiciones = document.getElementById('btnPosiciones');
+      const btnAnotadores = document.getElementById('btnAnotadores');
+      const btnEquipos = document.getElementById('btnEquipos');
+      const redisIndicator = document.getElementById('redisIndicator');
+      const redisStatusText = document.getElementById('redisStatusText');
+      const latencyText = document.getElementById('latencyText');
+      const latencyLabel = document.getElementById('latencyLabel');
+      const latencyAlert = document.getElementById('latencyAlert');
+      const resultTitle = document.getElementById('resultTitle');
+      const resultInfo = document.getElementById('resultInfo');
+      const resultTable = document.getElementById('resultTable');
+      const resultThead = resultTable.querySelector('thead');
+      const resultTbody = resultTable.querySelector('tbody');
+
+      const setRedisStatus = (online) => {
+        if (online) {
+          redisIndicator.textContent = '🟢 Redis Online';
+          redisIndicator.className = 'badge bg-success rounded-pill';
+          redisStatusText.textContent = 'Redis Online (Flujo normal).';
+        } else {
+          redisIndicator.textContent = '🔴 Redis Offline';
+          redisIndicator.className = 'badge bg-danger rounded-pill';
+          redisStatusText.textContent = 'Redis Offline - Modo Resiliencia Activo.';
+        }
+      };
+
+      const showLatency = (meta) => {
+        const label = meta.cacheHit
+          ? 'Fuente: Memoria Rápida (Redis) — Cache HIT'
+          : 'Fuente: Base de Datos principal (PostgreSQL) — Cache MISS';
+        latencyText.textContent = `${meta.durationMs} ms`;
+        latencyLabel.textContent = label;
+        latencyAlert.textContent = meta.redisOnline
+          ? 'Redis está activo. Si los datos llegan rápido, son desde Cache.'
+          : 'Redis no está disponible. Se trajo la información desde PostgreSQL.';
+        latencyAlert.className = meta.redisOnline
+          ? 'alert alert-success p-2 small'
+          : 'alert alert-warning p-2 small';
+      };
+
+      const clearResult = () => {
+        resultThead.innerHTML = '';
+        resultTbody.innerHTML = '';
+      };
+
+      const renderTable = (columns, rows) => {
+        clearResult();
+        resultThead.innerHTML = '<tr>' + columns.map(col => `<th scope="col">${col}</th>`).join('') + '</tr>';
+        resultTbody.innerHTML = rows.length
+          ? rows.map(row => '<tr>' + columns.map(key => `<td>${row[key] ?? ''}</td>`).join('') + '</tr>').join('')
+          : '<tr><td colspan="'+columns.length+'" class="text-center text-muted py-4">No hay filas para mostrar.</td></tr>';
+      };
+
+      const fetchApi = async (path, title) => {
+        resultTitle.textContent = title;
+        resultInfo.textContent = 'Cargando...';
+        resultTable.querySelector('thead').innerHTML = '';
+        resultTable.querySelector('tbody').innerHTML = '';
+        latencyText.textContent = '...';
+        latencyLabel.textContent = '';
+        latencyAlert.className = 'alert alert-light p-2 small';
+        latencyAlert.textContent = 'Consultando servicio...';
+
+        try {
+          const start = performance.now();
+          const response = await fetch(path);
+          const durationMs = Math.round(performance.now() - start);
+          const payload = await response.json();
+
+          if (!response.ok) {
+            resultInfo.textContent = `Error: ${payload.error || response.statusText}`;
+            latencyText.textContent = `${durationMs} ms`;
+            latencyLabel.textContent = 'Error en la consulta';
+            return;
+          }
+
+          const meta = payload.meta || { cacheHit: false, redisOnline: false, durationMs };
+          if (payload.meta && payload.meta.durationMs != null) {
+            payload.meta.durationMs = payload.meta.durationMs;
+          } else {
+            payload.meta = { ...meta, durationMs };
+          }
+          showLatency(payload.meta);
+          setRedisStatus(payload.meta.redisOnline);
+          resultInfo.textContent = `Se obtuvieron ${payload.data.length} registros.`;
+
+          if (payload.data.length === 0) {
+            clearResult();
+            return;
+          }
+
+          const columns = Object.keys(payload.data[0]);
+          renderTable(columns, payload.data);
+        } catch (error) {
+          resultInfo.textContent = `Error de red: ${error.message}`;
+          latencyText.textContent = '---';
+          latencyLabel.textContent = 'No se pudo completar la petición';
+          latencyAlert.className = 'alert alert-danger p-2 small';
+          latencyAlert.textContent = 'Revisa que el backend esté corriendo y que el servidor Redis esté accesible.';
+        }
+      };
+
+      const refreshHealth = async () => {
+        try {
+          const response = await fetch('/api/health');
+          const payload = await response.json();
+          setRedisStatus(payload.redisOnline);
+          if (!payload.redisOnline) {
+            latencyAlert.className = 'alert alert-warning p-2 small';
+            latencyAlert.textContent = 'Redis no disponible. El sistema trabajará con fallback a PostgreSQL.';
+          } else {
+            latencyAlert.className = 'alert alert-light p-2 small';
+            latencyAlert.textContent = 'Redis disponible. Usa los botones para comprobar cache HIT / MISS.';
+          }
+          latencyText.textContent = '';
+          latencyLabel.textContent = '';
+        } catch (error) {
+          setRedisStatus(false);
+          latencyAlert.className = 'alert alert-danger p-2 small';
+          latencyAlert.textContent = 'No se pudo verificar el estado del backend.';
+          latencyText.textContent = '';
+          latencyLabel.textContent = '';
+        }
+      };
+
+      btnPosiciones.addEventListener('click', () => fetchApi('/api/posiciones', 'Tabla de Posiciones / Clasificación'));
+      btnAnotadores.addEventListener('click', () => fetchApi('/api/estadisticas/maximos-anotadores', 'Máximos Anotadores / Líderes de Estadísticas'));
+      btnEquipos.addEventListener('click', () => fetchApi('/api/equipos', 'Planteles / Lista de Equipos'));
+
+      refreshHealth();
+    </script>
+  </body>
+</html>
