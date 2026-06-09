@@ -5,6 +5,7 @@
 
 import express from 'express';
 import { connectRedis, disconnectRedis, getRedisClient } from './config/redis.js';
+import { query, closeDb } from './config/db.js';
 import { 
   redisMiddleware, 
   cacheMiddleware, 
@@ -16,6 +17,7 @@ import {
   createKey,
   safeGet,
   safeSet,
+  cacheAside,
   increment,
   getHash,
   setHash,
@@ -25,6 +27,7 @@ import {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
 
 // ========== CONFIGURACIÓN DE MIDDLEWARES ==========
 
@@ -60,6 +63,45 @@ app.get('/health', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+/**
+ * GET /partidos/resumen
+ * Implementa Cache-Aside: primero Redis, luego PostgreSQL, serializa y guarda en Redis con TTL.
+ */
+app.get('/partidos/resumen', async (req, res) => {
+  try {
+    const cacheKey = 'partidos:resumen';
+
+    const resumen = await cacheAside(cacheKey, async () => {
+      const sql = `
+        SELECT p.id_partido AS id,
+               p.fecha,
+               p.hora,
+               p.puntos_local,
+               p.puntos_visitante,
+               el.nombre AS equipo_local,
+               ev.nombre AS equipo_visitante
+        FROM partido p
+        JOIN equipo el ON p.id_equipo_local = el.id_equipo
+        JOIN equipo ev ON p.id_equipo_visitante = ev.id_equipo
+        ORDER BY p.fecha DESC
+        LIMIT 20
+      `;
+
+      const result = await query(sql);
+      return result.rows;
+    }, BENJA_CACHE_TTL);
+
+    res.json({
+      cacheKey,
+      ttlSeconds: BENJA_CACHE_TTL,
+      data: resumen
+    });
+  } catch (error) {
+    console.error('❌ Error /partidos/resumen:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -276,6 +318,7 @@ const startServer = async () => {
       console.log(`✅ Servidor corriendo en http://localhost:${PORT}`);
       console.log('\n📚 Rutas disponibles:');
       console.log(`   GET  /health              - Verificar estado`);
+      console.log(`   GET  /partidos/resumen    - Cache-Aside con Redis + PostgreSQL`);
       console.log(`   GET  /cache-test          - Probar cacheo`);
       console.log(`   GET  /counter             - Incrementar contador`);
       console.log(`   POST /player/:id          - Crear jugador`);
@@ -296,6 +339,7 @@ const startServer = async () => {
 process.on('SIGINT', async () => {
   console.log('\n\n🛑 Deteniendo servidor...');
   await disconnectRedis();
+  await closeDb();
   process.exit(0);
 });
 

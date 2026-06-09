@@ -63,6 +63,49 @@ export const safeSet = async (key, value, ttlSeconds = null) => {
 };
 
 /**
+ * Cache-Aside pattern helper.
+ * Busca los datos en Redis, y si no existen recupera el dato desde la DB,
+ * serializa el resultado como JSON y lo guarda en Redis con TTL.
+ *
+ * @param {string} key - Clave Redis
+ * @param {Function} loader - Función async que devuelve los datos desde la DB
+ * @param {number} [ttlSeconds=120] - TTL en segundos
+ * @returns {Promise<any>} Resultado desde cache o DB
+ */
+export const cacheAside = async (key, loader, ttlSeconds = 120) => {
+  try {
+    const redis = getRedisClient();
+    const cached = await redis.get(key);
+
+    if (cached) {
+      console.log(`✅ Cache hit: ${key}`);
+      try {
+        return JSON.parse(cached);
+      } catch (parseError) {
+        console.warn(`⚠️ Cache hit pero JSON inválido en ${key}:`, parseError.message);
+        return cached;
+      }
+    }
+
+    console.log(`⚠️ Cache miss: ${key}. Consultando DB...`);
+    const result = await loader();
+
+    if (result === undefined || result === null) {
+      return result;
+    }
+
+    const stringValue = typeof result === 'string' ? result : JSON.stringify(result);
+    await redis.set(key, stringValue, { EX: ttlSeconds });
+    console.log(`💾 Guardado en cache Redis: ${key} (TTL ${ttlSeconds}s)`);
+
+    return result;
+  } catch (error) {
+    console.error(`❌ Error en cacheAside para ${key}:`, error.message);
+    return await loader();
+  }
+};
+
+/**
  * Incrementa un contador
  * @param {string} key - Clave del contador
  * @param {number} [increment=1] - Cantidad a incrementar
