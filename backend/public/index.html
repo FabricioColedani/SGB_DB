@@ -93,6 +93,21 @@
         </div>
       </div>
 
+        <div class="card shadow-sm border-0 mb-4">
+          <div class="card-body">
+            <h2 class="h5 mb-3">Administración (Pruebas)</h2>
+            <div class="d-flex gap-2 mb-3">
+              <input id="flushKey" class="form-control" placeholder="Clave a flush (ej: posiciones:tabla)" />
+              <button id="btnFlush" class="btn btn-warning">Flush Cache</button>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="btnDisableRedis" class="btn btn-danger">Simular Redis OFF</button>
+              <button id="btnEnableRedis" class="btn btn-success">Simular Redis ON</button>
+              <button id="btnRedisStatus" class="btn btn-outline-secondary">Estado Redis</button>
+            </div>
+          </div>
+        </div>
+
       <div class="card shadow-sm border-0">
         <div class="card-body">
           <h2 class="h5 mb-3" id="resultTitle">Resultado</h2>
@@ -236,6 +251,46 @@
       btnPosiciones.addEventListener('click', () => fetchApi('/api/posiciones', 'Tabla de Posiciones / Clasificación'));
       btnAnotadores.addEventListener('click', () => fetchApi('/api/estadisticas/maximos-anotadores', 'Máximos Anotadores / Líderes de Estadísticas'));
       btnEquipos.addEventListener('click', () => fetchApi('/api/equipos', 'Planteles / Lista de Equipos'));
+
+      // Admin controls
+      const btnFlush = document.getElementById('btnFlush');
+      const flushKey = document.getElementById('flushKey');
+      const btnDisableRedis = document.getElementById('btnDisableRedis');
+      const btnEnableRedis = document.getElementById('btnEnableRedis');
+      const btnRedisStatus = document.getElementById('btnRedisStatus');
+
+      btnFlush?.addEventListener('click', async () => {
+        const key = flushKey.value.trim();
+        if (!key) return alert('Ingresá una clave para limpiar');
+        try {
+          const r = await fetch('/admin/cache/flush?key=' + encodeURIComponent(key), { method: 'POST' });
+          const j = await r.json();
+          show('Flush ' + key, { status: r.status, body: j });
+        } catch (e) {
+          show('Flush error', { message: e.message });
+        }
+      });
+
+      btnDisableRedis?.addEventListener('click', async () => {
+        const r = await fetch('/admin/redis/disable', { method: 'POST' });
+        const j = await r.json();
+        show('Redis disabled', j);
+        refreshHealth();
+      });
+
+      btnEnableRedis?.addEventListener('click', async () => {
+        const r = await fetch('/admin/redis/enable', { method: 'POST' });
+        const j = await r.json();
+        show('Redis enabled', j);
+        refreshHealth();
+      });
+
+      btnRedisStatus?.addEventListener('click', async () => {
+        const r = await fetch('/admin/redis/status');
+        const j = await r.json();
+        show('Redis status', j);
+        setRedisStatus(j.redisPing || !j.redisDisabled);
+      });
 
       refreshHealth();
     </script>

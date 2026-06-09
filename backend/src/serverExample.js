@@ -27,9 +27,14 @@ import {
   addSortedSet
 } from './utils/redisHelpers.js';
 
+import { deleteKeys } from './utils/redisHelpers.js';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
+
+// Flag para simular Redis caído desde el admin UI
+app.locals.redisDisabled = false;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +63,11 @@ app.use(express.json());
 const cacheAsideWithMeta = async (key, loader, ttlSeconds = BENJA_CACHE_TTL) => {
   const startTime = Date.now();
   let redisOnline = true;
+
+  // Allow admin to simulate Redis being offline
+  if (app?.locals?.redisDisabled) {
+    throw new Error('Redis disabled by admin');
+  }
 
   try {
     const redis = getRedisClient();
@@ -89,8 +99,10 @@ const cacheAsideWithMeta = async (key, loader, ttlSeconds = BENJA_CACHE_TTL) => 
     };
   } catch (error) {
     redisOnline = false;
-    console.warn(`Redis fallback para ${key}:`, error.message);
+    console.warn(`Redis fallback para ${key}: ${error.message}`);
+    if (error.stack) console.debug(error.stack);
 
+    // Fallback: obtener desde la DB y devolver meta indicando Redis offline
     const data = await loader();
     return {
       data,
@@ -171,33 +183,35 @@ app.get('/api/posiciones', async (req, res) => {
     const cacheKey = 'posiciones:tabla';
     const result = await cacheAsideWithMeta(cacheKey, async () => {
       const sql = `
-        SELECT
-          e.id_equipo AS id,
-          e.nombre,
-          e.ciudad,
-          COUNT(p.id_partido) FILTER (
-            WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
-               OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local)
-          ) AS victorias,
-          COUNT(p.id_partido) FILTER (
-            WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local < p.puntos_visitante)
-               OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante < p.puntos_local)
-          ) AS derrotas,
-          COALESCE(SUM(CASE
-            WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_local
-            WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_visitante
-            ELSE 0 END), 0) AS puntos_anotados,
-          COALESCE(SUM(CASE
-            WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_visitante
-            WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_local
-            ELSE 0 END), 0) AS puntos_recibidos,
-          COALESCE(SUM(CASE
-            WHEN (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
-              OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local) THEN 2
-            ELSE 0 END), 0) AS puntos
-        FROM Equipo e
-        LEFT JOIN Partido p ON p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo
-        GROUP BY e.id_equipo, e.nombre, e.ciudad
+        SELECT * FROM (
+          SELECT
+            e.id_equipo AS id,
+            e.nombre,
+            e.ciudad,
+            COUNT(p.id_partido) FILTER (
+              WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+                 OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local)
+            ) AS victorias,
+            COUNT(p.id_partido) FILTER (
+              WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local < p.puntos_visitante)
+                 OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante < p.puntos_local)
+            ) AS derrotas,
+            COALESCE(SUM(CASE
+              WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_local
+              WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_visitante
+              ELSE 0 END), 0) AS puntos_anotados,
+            COALESCE(SUM(CASE
+              WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_visitante
+              WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_local
+              ELSE 0 END), 0) AS puntos_recibidos,
+            COALESCE(SUM(CASE
+              WHEN (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+                OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local) THEN 2
+              ELSE 0 END), 0) AS puntos
+          FROM Equipo e
+          LEFT JOIN Partido p ON p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo
+          GROUP BY e.id_equipo, e.nombre, e.ciudad
+        ) t
         ORDER BY puntos DESC, victorias DESC, (puntos_anotados - puntos_recibidos) DESC;
       `;
       const response = await query(sql);
@@ -486,6 +500,64 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err);
   res.status(500).json({ error: error.message || 'Error interno' });
+});
+
+// ========== ADMIN ENDPOINTS (TESTING / FALLBACK) ==========
+
+/**
+ * POST /admin/cache/flush?key=...
+ * Borra una clave del cache (útil para forzar refetch)
+ */
+app.post('/admin/cache/flush', async (req, res) => {
+  try {
+    const key = req.query.key;
+    if (!key) return res.status(400).json({ error: 'key query param required' });
+
+    const deleted = await deleteKeys(key);
+    res.json({ ok: true, deleted });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /admin/redis/disable
+ * Simula Redis caído para pruebas de fallback
+ */
+app.post('/admin/redis/disable', (req, res) => {
+  app.locals.redisDisabled = true;
+  res.json({ redisDisabled: true });
+});
+
+/**
+ * POST /admin/redis/enable
+ */
+app.post('/admin/redis/enable', (req, res) => {
+  app.locals.redisDisabled = false;
+  res.json({ redisDisabled: false });
+});
+
+/**
+ * GET /admin/redis/status
+ */
+app.get('/admin/redis/status', async (req, res) => {
+  try {
+    const redisDisabled = !!app.locals.redisDisabled;
+    const status = { redisDisabled };
+    if (!redisDisabled) {
+      try {
+        const redis = getRedisClient();
+        const pong = await redis.ping();
+        status.redisPing = pong === 'PONG';
+      } catch (e) {
+        status.redisPing = false;
+        status.redisError = e.message;
+      }
+    }
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ========== INICIAR SERVIDOR ==========
