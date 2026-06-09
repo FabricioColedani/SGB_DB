@@ -12,14 +12,11 @@ import { getRedisClient } from '../config/redis.js';
 export const redisMiddleware = (req, res, next) => {
   try {
     req.redis = getRedisClient();
-    next();
   } catch (error) {
-    console.error('❌ Redis middleware error:', error.message);
-    res.status(500).json({ 
-      error: 'Redis client not available',
-      message: error.message 
-    });
+    console.error('❌ Redis middleware warning: Redis no disponible:', error.message);
+    req.redis = null;
   }
+  next();
 };
 
 /**
