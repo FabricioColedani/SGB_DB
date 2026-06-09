@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectRedis, disconnectRedis, getRedisClient } from './config/redis.js';
@@ -24,10 +25,10 @@ import {
   getHash,
   setHash,
   getSortedSet,
-  addSortedSet
+  addSortedSet,
+  deleteKeys,
+  flushDatabase
 } from './utils/redisHelpers.js';
-
-import { deleteKeys } from './utils/redisHelpers.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,7 +43,10 @@ const publicPath = path.resolve(__dirname, '../public');
 
 // ========== CONFIGURACIÓN DE MIDDLEWARES ==========
 
-// Servir frontend estático
+// Habilitar CORS para que el frontend pueda usar el backend desde cualquier origen
+app.use(cors());
+
+// Servir frontend desde backend/public
 app.use(express.static(publicPath));
 
 // Middleware de logging
@@ -388,12 +392,40 @@ app.get('/player/:id', async (req, res) => {
 app.get('/ranking', async (req, res) => {
   try {
     const rankingKey = createKey('ranking', 'season1', 'points');
-    const ranking = await getSortedSet(rankingKey, 0, 9, true);
+    let ranking = await getSortedSet(rankingKey, 0, 9, true);
 
     if (ranking.length === 0) {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          CONCAT(j.nombre, ' ', j.apellido) AS jugador,
+          e.nombre AS equipo,
+          COALESCE(SUM(est.puntos), 0) AS puntos_totales
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
+        ORDER BY puntos_totales DESC
+        LIMIT 10;
+      `;
+      const response = await query(sql);
+      const dbRanking = response.rows.map((row) => ({
+        member: String(row.id),
+        score: Number(row.puntos_totales),
+        jugador: row.jugador,
+        equipo: row.equipo
+      }));
+
+      if (dbRanking.length > 0) {
+        await addSortedSet(rankingKey, dbRanking.map((row) => ({
+          score: row.score,
+          member: row.member
+        })));
+      }
+
       return res.json({
-        message: 'No hay datos en el ranking',
-        ranking: []
+        season: 'season1',
+        topPlayers: dbRanking
       });
     }
 
@@ -493,14 +525,8 @@ app.get('/session/destroy', async (req, res) => {
 
 // ========== MANEJO DE ERRORES ==========
 
-app.use((req, res) => {
-  res.status(404).json({ error: 'Ruta no encontrada' });
-});
-
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err);
-  res.status(500).json({ error: error.message || 'Error interno' });
-});
+// Nota: este middleware debe ser el último en montarse, después de todas las rutas.
+// Si se coloca antes, bloqueará las rutas definidas luego.
 
 // ========== ADMIN ENDPOINTS (TESTING / FALLBACK) ==========
 
@@ -515,6 +541,19 @@ app.post('/admin/cache/flush', async (req, res) => {
 
     const deleted = await deleteKeys(key);
     res.json({ ok: true, deleted });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /admin/redis/flush
+ * Borra todo el contenido de Redis usado por la aplicación
+ */
+app.post('/admin/redis/flush', async (req, res) => {
+  try {
+    await flushDatabase();
+    res.json({ ok: true, flushed: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -560,6 +599,17 @@ app.get('/admin/redis/status', async (req, res) => {
   }
 });
 
+// ========== MANEJO DE ERRORES ==========
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada' });
+});
+
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err);
+  res.status(500).json({ error: error.message || 'Error interno' });
+});
+
 // ========== INICIAR SERVIDOR ==========
 
 const startServer = async () => {
@@ -583,7 +633,8 @@ const startServer = async () => {
       console.log(`   POST /ranking/player      - Agregar puntos`);
       console.log(`   GET  /session/set/:key/:value - Guardar en sesión`);
       console.log(`   GET  /session/get/:key    - Leer sesión`);
-      console.log(`   GET  /session/destroy     - Destruir sesión\n`);
+      console.log(`   GET  /session/destroy     - Destruir sesión`);
+      console.log(`   POST /admin/redis/flush   - Limpiar todo Redis\n`);
     });
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);

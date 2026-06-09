@@ -1,4 +1,5 @@
-const API_BASE = 'http://localhost:3000/api';
+const BACKEND_ORIGIN = window.location.protocol.startsWith('http') ? window.location.origin : 'http://localhost:3000';
+const API_BASE = window.location.protocol.startsWith('http') ? '/api' : 'http://localhost:3000/api';
 
 const $ = id => document.getElementById(id);
 
@@ -95,7 +96,7 @@ async function loadEquipos() {
 
 async function loadPartidosResumen() {
   try {
-    const res = await fetch('http://localhost:3000/partidos/resumen');
+    const res = await fetch(`${BACKEND_ORIGIN}/partidos/resumen`);
     const payload = await res.json();
     // /partidos/resumen returns different shape (no meta) so craft meta
     const meta = { durationMs: '-','cacheHit': false, redisOnline: true };
@@ -108,7 +109,7 @@ async function loadPartidosResumen() {
 
 async function loadRanking() {
   try {
-    const res = await fetch('http://localhost:3000/ranking');
+    const res = await fetch(`${BACKEND_ORIGIN}/ranking`);
     const payload = await res.json();
     setStatus({ durationMs: '-', cacheHit: false, redisOnline: false });
     if (payload.topPlayers) {
@@ -133,7 +134,7 @@ async function searchPlayer() {
   if (!id) return;
   playerResult.textContent = 'Buscando...';
   try {
-    const res = await fetch(`http://localhost:3000/player/${id}`);
+    const res = await fetch(`${BACKEND_ORIGIN}/player/${id}`);
     const payload = await res.json();
     if (res.ok) {
       playerResult.innerHTML = `<div><strong>${payload.name || payload.nombre || 'Jugador'}</strong><br/><small>${JSON.stringify(payload)}</small></div>`;
