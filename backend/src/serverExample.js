@@ -366,21 +366,133 @@ app.post('/player/:id', async (req, res) => {
 
 /**
  * GET /player/:id
- * Obtiene datos de un jugador
+ * Obtiene datos de un jugador desde Redis o PostgreSQL si no está cacheado
  */
 app.get('/player/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const playerKey = createKey('player', id);
 
-    const player = await getHash(playerKey);
-    
+    let player = await getHash(playerKey);
+
     if (!player || Object.keys(player).length === 0) {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          j.nombre,
+          j.apellido,
+          j.posicion,
+          j.fecha_nacimiento AS fechaNacimiento,
+          j.altura,
+          j.peso,
+          j.id_equipo AS equipoId,
+          e.nombre AS equipo
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        WHERE j.id_jugador = $1;
+      `;
+      const response = await query(sql, [id]);
+      player = response.rows[0] || null;
+
+      if (!player) {
+        return res.status(404).json({ message: 'Jugador no encontrado' });
+      }
+
+      await setHash(playerKey, {
+        id: String(player.id),
+        nombre: player.nombre || '',
+        apellido: player.apellido || '',
+        posicion: player.posicion || '',
+        fechaNacimiento: player.fechaNacimiento ? String(player.fechaNacimiento) : '',
+        altura: player.altura != null ? String(player.altura) : '',
+        peso: player.peso != null ? String(player.peso) : '',
+        equipoId: String(player.equipoId || ''),
+        equipo: player.equipo || ''
+      }, 86400);
+
+      return res.json({ source: 'postgresql', data: player });
+    }
+
+    res.json({ source: 'redis', data: player });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /jugador/:id
+ * GET /api/jugadores/:id
+ * Obtiene datos de un jugador por ID desde PostgreSQL con cache opcional Redis
+ */
+const getJugadorById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cacheKey = `jugador:${id}`;
+
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          j.nombre,
+          j.apellido,
+          j.posicion,
+          j.fecha_nacimiento AS fechaNacimiento,
+          j.altura,
+          j.peso,
+          j.id_equipo AS equipoId,
+          e.nombre AS equipo
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        WHERE j.id_jugador = $1;
+      `;
+      const response = await query(sql, [id]);
+      return response.rows[0] || null;
+    }, BENJA_CACHE_TTL);
+
+    if (!result.data) {
       return res.status(404).json({ message: 'Jugador no encontrado' });
     }
 
-    res.json(player);
+    res.json({ meta: result.meta, data: result.data });
   } catch (error) {
+    console.error('❌ Error /api/jugadores/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+app.get(['/jugador/:id', '/api/jugadores/:id'], getJugadorById);
+
+/**
+ * GET /api/equipos/:equipoId/jugadores
+ * Obtiene listado de jugadores de un equipo
+ */
+app.get('/api/equipos/:equipoId/jugadores', async (req, res) => {
+  try {
+    const { equipoId } = req.params;
+    const cacheKey = `equipos:${equipoId}:jugadores`;
+
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          j.nombre,
+          j.apellido,
+          j.posicion,
+          j.fecha_nacimiento AS fechaNacimiento,
+          j.altura,
+          j.peso,
+          j.id_equipo AS equipoId
+        FROM Jugador j
+        WHERE j.id_equipo = $1
+        ORDER BY j.apellido, j.nombre;
+      `;
+      const response = await query(sql, [equipoId]);
+      return response.rows;
+    }, BENJA_CACHE_TTL);
+
+    res.json({ meta: result.meta, data: result.data });
+  } catch (error) {
+    console.error('❌ Error /api/equipos/:equipoId/jugadores:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -628,7 +740,9 @@ const startServer = async () => {
       console.log(`   GET  /cache-test          - Probar cacheo`);
       console.log(`   GET  /counter             - Incrementar contador`);
       console.log(`   POST /player/:id          - Crear jugador`);
-      console.log(`   GET  /player/:id          - Obtener jugador`);
+      console.log(`   GET  /player/:id          - Obtener jugador desde Redis`);
+      console.log(`   GET  /jugador/:id         - Obtener jugador por ID (DB + cache)`);
+      console.log(`   GET  /api/jugadores/:id   - Obtener jugador por ID (DB + cache)`);
       console.log(`   GET  /ranking             - Ver ranking`);
       console.log(`   POST /ranking/player      - Agregar puntos`);
       console.log(`   GET  /session/set/:key/:value - Guardar en sesión`);

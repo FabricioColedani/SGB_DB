@@ -129,6 +129,32 @@ async function loadRanking() {
   }
 }
 
+const renderPlayerCard = (player, source) => {
+  if (!player) return '<div class="text-muted">No hay datos de jugador.</div>';
+
+  const rows = [
+    ['ID', player.id],
+    ['Nombre', `${player.nombre || ''} ${player.apellido || ''}`.trim()],
+    ['Posición', player.posicion || '-'],
+    ['Fecha de nacimiento', player.fechaNacimiento || '-'],
+    ['Altura', player.altura ? `${player.altura} m` : '-'],
+    ['Peso', player.peso ? `${player.peso} kg` : '-'],
+    ['Equipo', player.equipo || '-'],
+    ['Fuente', source || 'Desconocida']
+  ];
+
+  const detailRows = rows.map(([label, value]) => {
+    return `<div class="d-flex justify-content-between py-1 border-bottom"><strong>${label}</strong><span>${value}</span></div>`;
+  }).join('');
+
+  return `
+    <div class="card bg-light p-3">
+      <div class="mb-2"><strong>Jugador encontrado</strong></div>
+      ${detailRows}
+    </div>
+  `;
+};
+
 async function searchPlayer() {
   const id = playerInput.value.trim();
   if (!id) return;
@@ -137,7 +163,9 @@ async function searchPlayer() {
     const res = await fetch(`${BACKEND_ORIGIN}/player/${id}`);
     const payload = await res.json();
     if (res.ok) {
-      playerResult.innerHTML = `<div><strong>${payload.name || payload.nombre || 'Jugador'}</strong><br/><small>${JSON.stringify(payload)}</small></div>`;
+      const player = payload.data || payload;
+      const source = payload.source || (payload.meta && payload.meta.cacheHit ? 'Redis' : 'PostgreSQL');
+      playerResult.innerHTML = renderPlayerCard(player, source);
     } else {
       playerResult.textContent = payload.message || payload.error || 'No encontrado';
     }
