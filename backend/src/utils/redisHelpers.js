@@ -112,8 +112,13 @@ export const cacheAside = async (key, loader, ttlSeconds = 120) => {
  * @returns {Promise<number>} Valor del contador después del incremento
  */
 export const increment = async (key, increment = 1) => {
-  const redis = getRedisClient();
-  return await redis.incrBy(key, increment);
+  try {
+    const redis = getRedisClient();
+    return await redis.incrBy(key, increment);
+  } catch (error) {
+    console.error(`Error incrementando contador ${key}:`, error.message);
+    return 0;
+  }
 };
 
 /**
@@ -123,8 +128,13 @@ export const increment = async (key, increment = 1) => {
  * @returns {Promise<number>} Valor del contador después del decremento
  */
 export const decrement = async (key, decrement = 1) => {
-  const redis = getRedisClient();
-  return await redis.decrBy(key, decrement);
+  try {
+    const redis = getRedisClient();
+    return await redis.decrBy(key, decrement);
+  } catch (error) {
+    console.error(`Error decrementando contador ${key}:`, error.message);
+    return 0;
+  }
 };
 
 /**
@@ -205,11 +215,16 @@ export const setHashField = async (key, field, value) => {
  * @returns {Promise<number>} Largo de la lista
  */
 export const pushList = async (key, ...values) => {
-  const redis = getRedisClient();
-  const stringValues = values.map(v => 
-    typeof v === 'string' ? v : JSON.stringify(v)
-  );
-  return await redis.lPush(key, stringValues);
+  try {
+    const redis = getRedisClient();
+    const stringValues = values.map(v => 
+      typeof v === 'string' ? v : JSON.stringify(v)
+    );
+    return await redis.lPush(key, stringValues);
+  } catch (error) {
+    console.error(`Error agregando lista ${key}:`, error.message);
+    return 0;
+  }
 };
 
 /**
@@ -243,8 +258,13 @@ export const getList = async (key, start = 0, stop = -1) => {
  * @returns {Promise<number>} Número de miembros agregados
  */
 export const addSet = async (key, ...members) => {
-  const redis = getRedisClient();
-  return await redis.sAdd(key, members);
+  try {
+    const redis = getRedisClient();
+    return await redis.sAdd(key, members);
+  } catch (error) {
+    console.error(`Error agregando conjunto ${key}:`, error.message);
+    return 0;
+  }
 };
 
 /**
@@ -291,8 +311,13 @@ export const isMemberOfSet = async (key, member) => {
  * ])
  */
 export const addSortedSet = async (key, members) => {
-  const redis = getRedisClient();
-  return await redis.zAdd(key, members);
+  try {
+    const redis = getRedisClient();
+    return await redis.zAdd(key, members);
+  } catch (error) {
+    console.error(`Error agregando conjunto ordenado ${key}:`, error.message);
+    return 0;
+  }
 };
 
 /**
