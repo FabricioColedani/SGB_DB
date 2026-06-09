@@ -28,7 +28,7 @@ WITH RECURSIVE Jerarquia_Completa AS (
         tipo_entidad,
         id_padre,
         1 AS nivel,
-        nombre AS ruta_completa
+        nombre::VARCHAR AS ruta_completa
     FROM Jerarquia_Liga
     WHERE id_padre IS NULL
 
