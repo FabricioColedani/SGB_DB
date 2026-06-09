@@ -8,7 +8,8 @@ const pool = new Pool({
   port: Number(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME || 'liga_basquet',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres'
+  password: process.env.DB_PASSWORD || 'postgres',
+  options: process.env.DB_OPTIONS || '-c search_path=liga,public'
 });
 
 export const query = async (text, params = []) => {

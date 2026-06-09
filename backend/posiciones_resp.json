@@ -1,0 +1,160 @@
+﻿{
+    "meta":  {
+                 "cacheHit":  true,
+                 "source":  "Redis",
+                 "durationMs":  1,
+                 "redisOnline":  true
+             },
+    "data":  [
+                 {
+                     "id":  1,
+                     "nombre":  "Boca Juniors",
+                     "ciudad":  "Buenos Aires",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  2,
+                     "nombre":  "San Lorenzo",
+                     "ciudad":  "CABA",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  3,
+                     "nombre":  "Peñarol",
+                     "ciudad":  "Mar del Plata",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  4,
+                     "nombre":  "Quimsa",
+                     "ciudad":  "Santiago del Estero",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  5,
+                     "nombre":  "Regatas Corrientes",
+                     "ciudad":  "Corrientes",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  6,
+                     "nombre":  "Instituto",
+                     "ciudad":  "Córdoba",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  7,
+                     "nombre":  "Obras Sanitarias",
+                     "ciudad":  "CABA",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  8,
+                     "nombre":  "Gimnasia CR",
+                     "ciudad":  "Comodoro Rivadavia",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  9,
+                     "nombre":  "Platense",
+                     "ciudad":  "Vicente López",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  10,
+                     "nombre":  "Ferro Carril Oeste",
+                     "ciudad":  "CABA",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  11,
+                     "nombre":  "Riachuelo",
+                     "ciudad":  "La Rioja",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  12,
+                     "nombre":  "La Unión",
+                     "ciudad":  "Formosa",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  13,
+                     "nombre":  "Atenas",
+                     "ciudad":  "Córdoba",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  14,
+                     "nombre":  "Olímpico",
+                     "ciudad":  "La Banda",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 },
+                 {
+                     "id":  15,
+                     "nombre":  "Argentino",
+                     "ciudad":  "Junín",
+                     "victorias":  "0",
+                     "derrotas":  "0",
+                     "puntos_anotados":  "0",
+                     "puntos_recibidos":  "0",
+                     "puntos":  "0"
+                 }
+             ]
+}

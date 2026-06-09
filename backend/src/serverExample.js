@@ -4,6 +4,9 @@
  */
 
 import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { connectRedis, disconnectRedis, getRedisClient } from './config/redis.js';
 import { query, closeDb } from './config/db.js';
 import { 
@@ -22,14 +25,29 @@ import {
   getHash,
   setHash,
   getSortedSet,
-  addSortedSet
+  addSortedSet,
+  deleteKeys,
+  flushDatabase
 } from './utils/redisHelpers.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
 
+// Flag para simular Redis caído desde el admin UI
+app.locals.redisDisabled = false;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicPath = path.resolve(__dirname, '../public');
+
 // ========== CONFIGURACIÓN DE MIDDLEWARES ==========
+
+// Habilitar CORS para que el frontend pueda usar el backend desde cualquier origen
+app.use(cors());
+
+// Servir frontend desde backend/public
+app.use(express.static(publicPath));
 
 // Middleware de logging
 app.use(loggingMiddleware());
@@ -46,23 +64,207 @@ app.use(sessionMiddleware('sgb-session', 3600));
 // Parsear JSON
 app.use(express.json());
 
+const cacheAsideWithMeta = async (key, loader, ttlSeconds = BENJA_CACHE_TTL) => {
+  const startTime = Date.now();
+  let redisOnline = true;
+
+  // Allow admin to simulate Redis being offline
+  if (app?.locals?.redisDisabled) {
+    throw new Error('Redis disabled by admin');
+  }
+
+  try {
+    const redis = getRedisClient();
+    const cached = await redis.get(key);
+
+    if (cached) {
+      const data = JSON.parse(cached);
+      return {
+        data,
+        meta: {
+          cacheHit: true,
+          source: 'Redis',
+          durationMs: Date.now() - startTime,
+          redisOnline
+        }
+      };
+    }
+
+    const data = await loader();
+    await redis.set(key, JSON.stringify(data), { EX: ttlSeconds });
+    return {
+      data,
+      meta: {
+        cacheHit: false,
+        source: 'PostgreSQL',
+        durationMs: Date.now() - startTime,
+        redisOnline
+      }
+    };
+  } catch (error) {
+    redisOnline = false;
+    console.warn(`Redis fallback para ${key}: ${error.message}`);
+    if (error.stack) console.debug(error.stack);
+
+    // Fallback: obtener desde la DB y devolver meta indicando Redis offline
+    const data = await loader();
+    return {
+      data,
+      meta: {
+        cacheHit: false,
+        source: 'PostgreSQL',
+        durationMs: Date.now() - startTime,
+        redisOnline
+      }
+    };
+  }
+};
+
 // ========== RUTAS DE PRUEBA ==========
 
 /**
- * GET /health
- * Verifica que Redis está conectado
+ * GET /api/health
+ * Verifica si Redis está conectado y devuelve estado general.
  */
-app.get('/health', async (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
     const redis = req.redis;
     const pong = await redis.ping();
     res.json({
       status: 'ok',
-      redis: pong === 'PONG' ? 'connected' : 'disconnected',
+      redisOnline: pong === 'PONG',
+      source: pong === 'PONG' ? 'Redis' : 'PostgreSQL',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+    res.json({
+      status: 'ok',
+      redisOnline: false,
+      source: 'PostgreSQL',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/**
+ * GET /api/equipos
+ * Retorna equipos con cache Redis.
+ */
+app.get('/api/equipos', async (req, res) => {
+  try {
+    const cacheKey = 'equipos:lista';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT id_equipo AS id,
+               nombre,
+               ciudad,
+               tecnico,
+               anio_fundacion
+        FROM Equipo
+        ORDER BY nombre;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 86400);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/equipos:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/posiciones
+ * Tabla de posiciones / clasificación del torneo.
+ */
+app.get('/api/posiciones', async (req, res) => {
+  try {
+    const cacheKey = 'posiciones:tabla';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT * FROM (
+          SELECT
+            e.id_equipo AS id,
+            e.nombre,
+            e.ciudad,
+            COUNT(p.id_partido) FILTER (
+              WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+                 OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local)
+            ) AS victorias,
+            COUNT(p.id_partido) FILTER (
+              WHERE (p.id_equipo_local = e.id_equipo AND p.puntos_local < p.puntos_visitante)
+                 OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante < p.puntos_local)
+            ) AS derrotas,
+            COALESCE(SUM(CASE
+              WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_local
+              WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_visitante
+              ELSE 0 END), 0) AS puntos_anotados,
+            COALESCE(SUM(CASE
+              WHEN p.id_equipo_local = e.id_equipo THEN p.puntos_visitante
+              WHEN p.id_equipo_visitante = e.id_equipo THEN p.puntos_local
+              ELSE 0 END), 0) AS puntos_recibidos,
+            COALESCE(SUM(CASE
+              WHEN (p.id_equipo_local = e.id_equipo AND p.puntos_local > p.puntos_visitante)
+                OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local) THEN 2
+              ELSE 0 END), 0) AS puntos
+          FROM Equipo e
+          LEFT JOIN Partido p ON p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo
+          GROUP BY e.id_equipo, e.nombre, e.ciudad
+        ) t
+        ORDER BY puntos DESC, victorias DESC, (puntos_anotados - puntos_recibidos) DESC;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 120);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/posiciones:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/estadisticas/maximos-anotadores
+ * Retorna Top 10 de máximos anotadores.
+ */
+app.get('/api/estadisticas/maximos-anotadores', async (req, res) => {
+  try {
+    const cacheKey = 'estadisticas:maximos-anotadores';
+    const result = await cacheAsideWithMeta(cacheKey, async () => {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          CONCAT(j.nombre, ' ', j.apellido) AS jugador,
+          e.nombre AS equipo,
+          COALESCE(SUM(est.puntos), 0) AS puntos_totales,
+          COUNT(DISTINCT est.id_partido) AS partidos
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
+        ORDER BY puntos_totales DESC
+        LIMIT 10;
+      `;
+      const response = await query(sql);
+      return response.rows;
+    }, 120);
+
+    res.json({
+      meta: result.meta,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error /api/estadisticas/maximos-anotadores:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -190,12 +392,40 @@ app.get('/player/:id', async (req, res) => {
 app.get('/ranking', async (req, res) => {
   try {
     const rankingKey = createKey('ranking', 'season1', 'points');
-    const ranking = await getSortedSet(rankingKey, 0, 9, true);
+    let ranking = await getSortedSet(rankingKey, 0, 9, true);
 
     if (ranking.length === 0) {
+      const sql = `
+        SELECT
+          j.id_jugador AS id,
+          CONCAT(j.nombre, ' ', j.apellido) AS jugador,
+          e.nombre AS equipo,
+          COALESCE(SUM(est.puntos), 0) AS puntos_totales
+        FROM Jugador j
+        LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
+        LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
+        ORDER BY puntos_totales DESC
+        LIMIT 10;
+      `;
+      const response = await query(sql);
+      const dbRanking = response.rows.map((row) => ({
+        member: String(row.id),
+        score: Number(row.puntos_totales),
+        jugador: row.jugador,
+        equipo: row.equipo
+      }));
+
+      if (dbRanking.length > 0) {
+        await addSortedSet(rankingKey, dbRanking.map((row) => ({
+          score: row.score,
+          member: row.member
+        })));
+      }
+
       return res.json({
-        message: 'No hay datos en el ranking',
-        ranking: []
+        season: 'season1',
+        topPlayers: dbRanking
       });
     }
 
@@ -295,6 +525,82 @@ app.get('/session/destroy', async (req, res) => {
 
 // ========== MANEJO DE ERRORES ==========
 
+// Nota: este middleware debe ser el último en montarse, después de todas las rutas.
+// Si se coloca antes, bloqueará las rutas definidas luego.
+
+// ========== ADMIN ENDPOINTS (TESTING / FALLBACK) ==========
+
+/**
+ * POST /admin/cache/flush?key=...
+ * Borra una clave del cache (útil para forzar refetch)
+ */
+app.post('/admin/cache/flush', async (req, res) => {
+  try {
+    const key = req.query.key;
+    if (!key) return res.status(400).json({ error: 'key query param required' });
+
+    const deleted = await deleteKeys(key);
+    res.json({ ok: true, deleted });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /admin/redis/flush
+ * Borra todo el contenido de Redis usado por la aplicación
+ */
+app.post('/admin/redis/flush', async (req, res) => {
+  try {
+    await flushDatabase();
+    res.json({ ok: true, flushed: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /admin/redis/disable
+ * Simula Redis caído para pruebas de fallback
+ */
+app.post('/admin/redis/disable', (req, res) => {
+  app.locals.redisDisabled = true;
+  res.json({ redisDisabled: true });
+});
+
+/**
+ * POST /admin/redis/enable
+ */
+app.post('/admin/redis/enable', (req, res) => {
+  app.locals.redisDisabled = false;
+  res.json({ redisDisabled: false });
+});
+
+/**
+ * GET /admin/redis/status
+ */
+app.get('/admin/redis/status', async (req, res) => {
+  try {
+    const redisDisabled = !!app.locals.redisDisabled;
+    const status = { redisDisabled };
+    if (!redisDisabled) {
+      try {
+        const redis = getRedisClient();
+        const pong = await redis.ping();
+        status.redisPing = pong === 'PONG';
+      } catch (e) {
+        status.redisPing = false;
+        status.redisError = e.message;
+      }
+    }
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== MANEJO DE ERRORES ==========
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
@@ -327,7 +633,8 @@ const startServer = async () => {
       console.log(`   POST /ranking/player      - Agregar puntos`);
       console.log(`   GET  /session/set/:key/:value - Guardar en sesión`);
       console.log(`   GET  /session/get/:key    - Leer sesión`);
-      console.log(`   GET  /session/destroy     - Destruir sesión\n`);
+      console.log(`   GET  /session/destroy     - Destruir sesión`);
+      console.log(`   POST /admin/redis/flush   - Limpiar todo Redis\n`);
     });
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);
