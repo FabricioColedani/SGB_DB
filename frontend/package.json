@@ -1,0 +1,10 @@
+{
+  "name": "sgb-frontend",
+  "version": "1.0.0",
+  "description": "Frontend independiente para SGB - interactivo y moderno",
+  "scripts": {
+    "start": "npx http-server -p 8080 -c-1 ./"
+  },
+  "author": "",
+  "license": "MIT"
+}

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SGB - Frontend Moderno</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="./style.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">SGB Dashboard</a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navMenu">
+            <ul class="navbar-nav ms-auto">
+              <li class="nav-item"><a class="nav-link" href="#" id="navPos">Posiciones</a></li>
+              <li class="nav-item"><a class="nav-link" href="#" id="navTop">Máximos Anotadores</a></li>
+              <li class="nav-item"><a class="nav-link" href="#" id="navEquipos">Equipos</a></li>
+              <li class="nav-item"><a class="nav-link" href="#" id="navPartidos">Partidos</a></li>
+              <li class="nav-item"><a class="nav-link" href="#" id="navRanking">Ranking (Redis)</a></li>
+            </ul>
+          </div>
+        </div>
+      </nav>
+
+      <main class="container py-4">
+        <div class="row g-4">
+          <div class="col-lg-8">
+            <div class="card p-3 mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h5 mb-0">Consultas</h3>
+                <div class="d-flex gap-2">
+                  <button id="btnRefreshHealth" class="btn btn-outline-secondary btn-sm">Refrescar Estado</button>
+                </div>
+              </div>
+
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <div class="card p-2">
+                    <div class="small text-muted">Fuente / Latencia</div>
+                    <div class="d-flex align-items-center justify-content-between mt-2">
+                      <div>
+                        <div id="sourceLabel" class="fw-bold">-</div>
+                        <div id="latencyLabel" class="text-muted small">-</div>
+                      </div>
+                      <div>
+                        <span id="redisBadge" class="badge bg-secondary">Comprobando...</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="card p-2">
+                    <div class="small text-muted">Acciones Rápidas</div>
+                    <div class="d-flex gap-2 mt-2">
+                      <button id="quickPos" class="btn btn-primary btn-sm">Posiciones</button>
+                      <button id="quickTop" class="btn btn-success btn-sm">Top Anotadores</button>
+                      <button id="quickEq" class="btn btn-outline-secondary btn-sm">Equipos</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <div id="mainArea" class="card p-3">
+                    <div id="mainTitle" class="h6 mb-2">Bienvenido — Vista interactiva</div>
+                    <div id="mainContent">Seleccione una consulta en el menú o use los botones rápidos.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card p-3">
+              <h3 class="h6">Visualizaciones</h3>
+              <div class="row g-3 mt-2">
+                <div class="col-md-6">
+                  <div class="card p-2">
+                    <canvas id="chartPos" height="220"></canvas>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="card p-2">
+                    <canvas id="chartTop" height="220"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-4">
+            <div class="card p-3 mb-3">
+              <h5 class="h6">Buscar Jugador</h5>
+              <div class="input-group mb-2">
+                <input id="playerInput" type="text" class="form-control" placeholder="ID jugador" />
+                <button id="playerBtn" class="btn btn-outline-primary">Buscar</button>
+              </div>
+              <div id="playerResult" class="small text-muted">Sin búsqueda</div>
+            </div>
+
+            <div class="card p-3 mb-3">
+              <h5 class="h6">Ranking Redis (demo)</h5>
+              <div id="redisRanking" class="small text-muted">Cargando...</div>
+            </div>
+
+            <div class="card p-3">
+              <h5 class="h6">Instrucciones</h5>
+              <ul class="small">
+                <li>Arrancar backend: <code>cd backend && npm start</code></li>
+                <li>Servir frontend: <code>npx http-server -p 8080 ./frontend</code> o usar Live Server.</li>
+                <li>Si hay problemas CORS, sirve el frontend desde el mismo origen o activa CORS en backend.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="text-center py-3 small text-muted">SGB — Frontend independiente • Interactivo y moderno</footer>
+    </div>
+
+    <script src="./app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
