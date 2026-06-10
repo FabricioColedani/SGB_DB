@@ -1,5 +1,9 @@
 # SGB_DB - Documentación y Orden de Ejecución
 
+https://github.com/user-attachments/assets/3a800c78-f3b4-4db9-b9a8-ac54a1f51c31
+
+https://github.com/user-attachments/assets/b526e619-f5b0-4ae6-88c1-2cdef7179169
+
 Este repositorio contiene scripts SQL organizados para el esquema de la liga de básquet y soporte de integración con Redis. Los archivos están nombrados con un orden lógico y descripciones claras para que puedas ejecutar cada paso por separado o revisar funcionalidades específicas.
 
 ## 📋 Orden de Ejecución Recomendado
