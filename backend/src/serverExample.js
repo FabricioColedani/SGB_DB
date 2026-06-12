@@ -194,6 +194,7 @@ app.get('/api/equipos', async (req, res) => {
                tecnico,
                anio_fundacion
         FROM Equipo
+        WHERE activo = true
         ORDER BY nombre;
       `;
       const response = await query(sql);
@@ -405,6 +406,234 @@ app.post('/api/partidos', async (req, res) => {
 });
 
 /**
+ * PATCH /api/jugadores/:id
+ * Actualiza campos de un jugador y borra caches relacionadas.
+ */
+app.patch('/api/jugadores/:id', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const { id } = req.params;
+    const allowedFields = {
+      nombre: 'nombre',
+      apellido: 'apellido',
+      fechaNacimiento: 'fecha_nacimiento',
+      posicion: 'posicion',
+      altura: 'altura',
+      peso: 'peso',
+      equipoId: 'id_equipo'
+    };
+
+    const updates = [];
+    const params = [];
+    let index = 1;
+
+    for (const [field, column] of Object.entries(allowedFields)) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${column} = $${index}`);
+        const value = field === 'altura' || field === 'peso'
+          ? parseNullableNumber(req.body[field])
+          : field === 'equipoId'
+            ? (req.body[field] != null ? Number(req.body[field]) : null)
+            : req.body[field] ? String(req.body[field]).trim() : null;
+        params.push(value);
+        index += 1;
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron campos válidos para actualizar' });
+    }
+
+    const sql = `
+      UPDATE Jugador
+      SET ${updates.join(', ')}
+      WHERE id_jugador = $${index}
+        AND activo = true
+      RETURNING
+        id_jugador AS id,
+        nombre,
+        apellido,
+        fecha_nacimiento AS "fechaNacimiento",
+        posicion,
+        altura,
+        peso,
+        id_equipo AS "equipoId";
+    `;
+
+    params.push(Number(id));
+    const result = await query(sql, params);
+    const jugador = result.rows[0];
+
+    if (!jugador) {
+      return res.status(404).json({ error: 'Jugador no encontrado o ya inactivo' });
+    }
+
+    await invalidateOldListCaches([
+      `jugador:${id}`,
+      'equipos:*:jugadores',
+      'estadisticas:maximos-anotadores'
+    ]);
+
+    res.json({ data: jugador });
+  } catch (error) {
+    console.error('❌ Error PATCH /api/jugadores/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/partidos/:id
+ * Actualiza un partido y elimina cache de posiciones/resumen.
+ */
+app.patch('/api/partidos/:id', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const { id } = req.params;
+    const allowedFields = {
+      fecha: 'fecha',
+      hora: 'hora',
+      puntosLocal: 'puntos_local',
+      puntosVisitante: 'puntos_visitante',
+      equipoLocalId: 'id_equipo_local',
+      equipoVisitanteId: 'id_equipo_visitante',
+      estadioId: 'id_estadio',
+      arbitroId: 'id_arbitro'
+    };
+
+    const updates = [];
+    const params = [];
+    let index = 1;
+
+    for (const [field, column] of Object.entries(allowedFields)) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${column} = $${index}`);
+        const value = field === 'puntosLocal' || field === 'puntosVisitante'
+          ? parseNullableNumber(req.body[field])
+          : field === 'equipoLocalId' || field === 'equipoVisitanteId' || field === 'estadioId' || field === 'arbitroId'
+            ? (req.body[field] != null ? Number(req.body[field]) : null)
+            : String(req.body[field]).trim();
+        params.push(value);
+        index += 1;
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron campos válidos para actualizar' });
+    }
+
+    const sql = `
+      UPDATE Partido
+      SET ${updates.join(', ')}
+      WHERE id_partido = $${index}
+        AND activo = true
+      RETURNING
+        id_partido AS id,
+        fecha,
+        hora,
+        puntos_local AS "puntosLocal",
+        puntos_visitante AS "puntosVisitante",
+        id_equipo_local AS "equipoLocalId",
+        id_equipo_visitante AS "equipoVisitanteId",
+        id_estadio AS "estadioId",
+        id_arbitro AS "arbitroId";
+    `;
+
+    params.push(Number(id));
+    const result = await query(sql, params);
+    const partido = result.rows[0];
+
+    if (!partido) {
+      return res.status(404).json({ error: 'Partido no encontrado o ya inactivo' });
+    }
+
+    await invalidateOldListCaches([
+      'posiciones:tabla',
+      'partidos:resumen',
+      'equipos:lista'
+    ]);
+
+    res.json({ data: partido });
+  } catch (error) {
+    console.error('❌ Error PATCH /api/partidos/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/jugadores/:id
+ * Baja lógica de jugador y eliminación selectiva de cache.
+ */
+app.delete('/api/jugadores/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sql = `
+      UPDATE Jugador
+      SET activo = false
+      WHERE id_jugador = $1
+        AND activo = true
+      RETURNING id_jugador AS id, nombre, apellido;
+    `;
+
+    const result = await query(sql, [Number(id)]);
+    const jugador = result.rows[0];
+
+    if (!jugador) {
+      return res.status(404).json({ error: 'Jugador no encontrado o ya inactivo' });
+    }
+
+    await invalidateOldListCaches([
+      `jugador:${id}`,
+      'equipos:*:jugadores',
+      'estadisticas:maximos-anotadores'
+    ]);
+
+    res.json({ message: 'Jugador dado de baja correctamente', data: jugador });
+  } catch (error) {
+    console.error('❌ Error DELETE /api/jugadores/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/equipos/:id
+ * Baja lógica de equipo y eliminación selectiva de cache.
+ */
+app.delete('/api/equipos/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sql = `
+      UPDATE Equipo
+      SET activo = false
+      WHERE id_equipo = $1
+        AND activo = true
+      RETURNING id_equipo AS id, nombre, ciudad;
+    `;
+
+    const result = await query(sql, [Number(id)]);
+    const equipo = result.rows[0];
+
+    if (!equipo) {
+      return res.status(404).json({ error: 'Equipo no encontrado o ya inactivo' });
+    }
+
+    await invalidateOldListCaches([
+      'equipos:lista',
+      'posiciones:tabla',
+      'partidos:resumen',
+      'equipos:*:jugadores',
+      'estadisticas:maximos-anotadores'
+    ]);
+
+    res.json({ message: 'Equipo dado de baja correctamente', data: equipo });
+  } catch (error) {
+    console.error('❌ Error DELETE /api/equipos/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * GET /api/posiciones
  * Tabla de posiciones / clasificación del torneo.
  */
@@ -439,7 +668,9 @@ app.get('/api/posiciones', async (req, res) => {
                 OR (p.id_equipo_visitante = e.id_equipo AND p.puntos_visitante > p.puntos_local) THEN 2
               ELSE 0 END), 0) AS puntos
           FROM Equipo e
-          LEFT JOIN Partido p ON p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo
+          LEFT JOIN Partido p ON (p.id_equipo_local = e.id_equipo OR p.id_equipo_visitante = e.id_equipo)
+            AND p.activo = true
+          WHERE e.activo = true
           GROUP BY e.id_equipo, e.nombre, e.ciudad
         ) t
         ORDER BY puntos DESC, victorias DESC, (puntos_anotados - puntos_recibidos) DESC;
@@ -476,6 +707,7 @@ app.get('/api/estadisticas/maximos-anotadores', async (req, res) => {
         FROM Jugador j
         LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
         LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        WHERE j.activo = true
         GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
         ORDER BY puntos_totales DESC
         LIMIT 10;
@@ -512,8 +744,9 @@ app.get('/partidos/resumen', async (req, res) => {
                el.nombre AS equipo_local,
                ev.nombre AS equipo_visitante
         FROM partido p
-        JOIN equipo el ON p.id_equipo_local = el.id_equipo
-        JOIN equipo ev ON p.id_equipo_visitante = ev.id_equipo
+        JOIN equipo el ON p.id_equipo_local = el.id_equipo AND el.activo = true
+        JOIN equipo ev ON p.id_equipo_visitante = ev.id_equipo AND ev.activo = true
+        WHERE p.activo = true
         ORDER BY p.fecha DESC
         LIMIT 20
       `;
@@ -669,7 +902,8 @@ const getJugadorById = async (req, res) => {
           e.nombre AS equipo
         FROM Jugador j
         LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
-        WHERE j.id_jugador = $1;
+        WHERE j.id_jugador = $1
+          AND j.activo = true;
       `;
       const response = await query(sql, [id]);
       return response.rows[0] || null;
@@ -710,6 +944,7 @@ app.get('/api/equipos/:equipoId/jugadores', async (req, res) => {
           j.id_equipo AS equipoId
         FROM Jugador j
         WHERE j.id_equipo = $1
+          AND j.activo = true
         ORDER BY j.apellido, j.nombre;
       `;
       const response = await query(sql, [equipoId]);
@@ -742,6 +977,7 @@ app.get('/ranking', async (req, res) => {
         FROM Jugador j
         LEFT JOIN Equipo e ON e.id_equipo = j.id_equipo
         LEFT JOIN Estadistica est ON est.id_jugador = j.id_jugador
+        WHERE j.activo = true
         GROUP BY j.id_jugador, j.nombre, j.apellido, e.nombre
         ORDER BY puntos_totales DESC
         LIMIT 10;
