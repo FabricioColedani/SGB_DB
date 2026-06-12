@@ -27,12 +27,44 @@ import {
   getSortedSet,
   addSortedSet,
   deleteKeys,
+  getKeysByPattern,
   flushDatabase
 } from './utils/redisHelpers.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
+
+const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+const parseNullableNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  return Number.isNaN(number) ? null : number;
+};
+
+const requireJsonContent = (req, res) => {
+  if (!req.is('application/json')) {
+    res.status(415).json({ error: 'Content-Type debe ser application/json' });
+    return false;
+  }
+  return true;
+};
+
+const deleteKeysByPattern = async (pattern) => {
+  try {
+    const keys = await getKeysByPattern(pattern);
+    if (keys.length === 0) return 0;
+    return await deleteKeys(keys);
+  } catch (error) {
+    console.error(`Error invalidando cache para patrón ${pattern}:`, error.message);
+    return 0;
+  }
+};
+
+const invalidateOldListCaches = async (patterns) => {
+  const deletePromises = patterns.map((pattern) => deleteKeysByPattern(pattern));
+  await Promise.all(deletePromises);
+};
 
 // Flag para simular Redis caído desde el admin UI
 app.locals.redisDisabled = false;
@@ -174,6 +206,200 @@ app.get('/api/equipos', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error /api/equipos:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/jugadores
+ * Crea un jugador nuevo y borra caches de listas viejas.
+ */
+app.post('/api/jugadores', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const {
+      nombre,
+      apellido,
+      fechaNacimiento,
+      posicion,
+      altura,
+      peso,
+      equipoId
+    } = req.body;
+
+    if (!isNonEmptyString(nombre) || !isNonEmptyString(apellido)) {
+      return res.status(400).json({ error: 'nombre y apellido son obligatorios' });
+    }
+
+    const sql = `
+      INSERT INTO Jugador (
+        nombre,
+        apellido,
+        fecha_nacimiento,
+        posicion,
+        altura,
+        peso,
+        id_equipo
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING
+        id_jugador AS id,
+        nombre,
+        apellido,
+        fecha_nacimiento AS "fechaNacimiento",
+        posicion,
+        altura,
+        peso,
+        id_equipo AS "equipoId";
+    `;
+
+    const params = [
+      nombre.trim(),
+      apellido.trim(),
+      fechaNacimiento || null,
+      posicion ? posicion.trim() : null,
+      parseNullableNumber(altura),
+      parseNullableNumber(peso),
+      equipoId != null ? Number(equipoId) : null
+    ];
+
+    const result = await query(sql, params);
+    const jugador = result.rows[0];
+
+    await invalidateOldListCaches([
+      'equipos:*:jugadores',
+      'jugador:*',
+      'estadisticas:maximos-anotadores'
+    ]);
+
+    res.status(201).json({ data: jugador });
+  } catch (error) {
+    console.error('❌ Error POST /api/jugadores:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/equipos
+ * Crea un equipo nuevo y borra caches de listas viejas.
+ */
+app.post('/api/equipos', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const { nombre, ciudad, tecnico, anioFundacion } = req.body;
+
+    if (!isNonEmptyString(nombre)) {
+      return res.status(400).json({ error: 'nombre es obligatorio para el equipo' });
+    }
+
+    const sql = `
+      INSERT INTO Equipo (
+        nombre,
+        ciudad,
+        tecnico,
+        anio_fundacion
+      ) VALUES ($1, $2, $3, $4)
+      RETURNING
+        id_equipo AS id,
+        nombre,
+        ciudad,
+        tecnico,
+        anio_fundacion AS "anioFundacion";
+    `;
+
+    const params = [
+      nombre.trim(),
+      ciudad ? ciudad.trim() : null,
+      tecnico ? tecnico.trim() : null,
+      parseNullableNumber(anioFundacion)
+    ];
+
+    const result = await query(sql, params);
+    const equipo = result.rows[0];
+
+    await invalidateOldListCaches([
+      'equipos:lista',
+      'posiciones:tabla',
+      'partidos:resumen'
+    ]);
+
+    res.status(201).json({ data: equipo });
+  } catch (error) {
+    console.error('❌ Error POST /api/equipos:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/partidos
+ * Crea un partido nuevo y borra caches de listas viejas.
+ */
+app.post('/api/partidos', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const {
+      fecha,
+      hora,
+      puntosLocal,
+      puntosVisitante,
+      equipoLocalId,
+      equipoVisitanteId,
+      estadioId,
+      arbitroId
+    } = req.body;
+
+    if (!isNonEmptyString(fecha) || !isNonEmptyString(hora)) {
+      return res.status(400).json({ error: 'fecha y hora son obligatorias' });
+    }
+
+    const sql = `
+      INSERT INTO Partido (
+        fecha,
+        hora,
+        puntos_local,
+        puntos_visitante,
+        id_equipo_local,
+        id_equipo_visitante,
+        id_estadio,
+        id_arbitro
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING
+        id_partido AS id,
+        fecha,
+        hora,
+        puntos_local AS "puntosLocal",
+        puntos_visitante AS "puntosVisitante",
+        id_equipo_local AS "equipoLocalId",
+        id_equipo_visitante AS "equipoVisitanteId",
+        id_estadio AS "estadioId",
+        id_arbitro AS "arbitroId";
+    `;
+
+    const params = [
+      fecha,
+      hora,
+      parseNullableNumber(puntosLocal),
+      parseNullableNumber(puntosVisitante),
+      equipoLocalId != null ? Number(equipoLocalId) : null,
+      equipoVisitanteId != null ? Number(equipoVisitanteId) : null,
+      estadioId != null ? Number(estadioId) : null,
+      arbitroId != null ? Number(arbitroId) : null
+    ];
+
+    const result = await query(sql, params);
+    const partido = result.rows[0];
+
+    await invalidateOldListCaches([
+      'posiciones:tabla',
+      'partidos:resumen',
+      'equipos:lista'
+    ]);
+
+    res.status(201).json({ data: partido });
+  } catch (error) {
+    console.error('❌ Error POST /api/partidos:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -739,6 +965,9 @@ const startServer = async () => {
       console.log(`   GET  /partidos/resumen    - Cache-Aside con Redis + PostgreSQL`);
       console.log(`   GET  /cache-test          - Probar cacheo`);
       console.log(`   GET  /counter             - Incrementar contador`);
+      console.log(`   POST /api/equipos        - Crear un equipo nuevo`);
+      console.log(`   POST /api/jugadores      - Crear un jugador nuevo`);
+      console.log(`   POST /api/partidos       - Crear un partido nuevo`);
       console.log(`   POST /player/:id          - Crear jugador`);
       console.log(`   GET  /player/:id          - Obtener jugador desde Redis`);
       console.log(`   GET  /jugador/:id         - Obtener jugador por ID (DB + cache)`);
