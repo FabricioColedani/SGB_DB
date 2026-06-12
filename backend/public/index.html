@@ -121,6 +121,82 @@
       <footer class="text-center py-3 small text-muted">SGB — Frontend independiente • Interactivo y moderno</footer>
     </div>
 
+    <!-- Modal: Dar de Baja Jugador -->
+    <div class="modal fade" id="modalDeletePlayer" tabindex="-1">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">Dar de Baja Jugador</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>¿Seguro que deseas dar de baja al jugador?</p>
+            <div id="deletePlayerInfo" class="alert alert-light"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmDelete">Dar de Baja</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Editar Puntos de Equipo/Partido -->
+    <div class="modal fade" id="modalEditPoints" tabindex="-1">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header bg-info text-white">
+            <h5 class="modal-title">Editar Puntos</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="editPointsInfo" class="alert alert-light mb-3"></div>
+            <div class="mb-3">
+              <label for="pointsLocal" class="form-label">Puntos Local</label>
+              <input type="number" class="form-control" id="pointsLocal" min="0" />
+            </div>
+            <div class="mb-3">
+              <label for="pointsVisitant" class="form-label">Puntos Visitante</label>
+              <input type="number" class="form-control" id="pointsVisitant" min="0" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-info" id="btnConfirmEditPoints">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Dar de Baja Equipo -->
+    <div class="modal fade" id="modalDeleteTeam" tabindex="-1">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">Dar de Baja Equipo</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p>¿Seguro que deseas dar de baja el equipo?</p>
+            <div id="deleteTeamInfo" class="alert alert-light"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmDeleteTeam">Dar de Baja</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notificación de acción -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+      <div id="actionAlert" class="alert alert-dismissible fade" role="alert" style="display:none; min-width: 300px;">
+        <strong id="actionAlertTitle">Acción</strong>
+        <span id="actionAlertMsg"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    </div>
+
     <script src="./app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
