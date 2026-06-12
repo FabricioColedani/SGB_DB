@@ -8,7 +8,8 @@ CREATE TABLE Equipo (
     nombre VARCHAR(100) NOT NULL,
     ciudad VARCHAR(100),
     tecnico VARCHAR(100),
-    anio_fundacion INT
+    anio_fundacion INT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE Jugador (
@@ -20,6 +21,7 @@ CREATE TABLE Jugador (
     altura NUMERIC(4,2),
     peso NUMERIC(5,2),
     id_equipo INT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (id_equipo)
         REFERENCES Equipo (id_equipo)
         ON UPDATE CASCADE
@@ -30,14 +32,16 @@ CREATE TABLE Estadio (
     id_estadio SERIAL PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     ciudad VARCHAR(100),
-    capacidad INT
+    capacidad INT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE Arbitro (
     id_arbitro SERIAL PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
     apellido VARCHAR(100) NOT NULL,
-    categoria VARCHAR(50)
+    categoria VARCHAR(50),
+    activo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE Partido (
@@ -50,6 +54,7 @@ CREATE TABLE Partido (
     id_equipo_visitante INT,
     id_estadio INT,
     id_arbitro INT,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (id_equipo_local)
         REFERENCES Equipo (id_equipo)
         ON UPDATE CASCADE
@@ -78,6 +83,7 @@ CREATE TABLE Estadistica (
     robos INT DEFAULT 0,
     tapas INT DEFAULT 0,
     minutos_jugados INT DEFAULT 0,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
     FOREIGN KEY (id_jugador)
         REFERENCES Jugador (id_jugador)
         ON UPDATE CASCADE
