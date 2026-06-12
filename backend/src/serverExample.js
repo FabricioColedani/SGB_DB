@@ -30,25 +30,20 @@ import {
   getKeysByPattern,
   flushDatabase
 } from './utils/redisHelpers.js';
+import {
+  isNonEmptyString,
+  parseNullableNumber,
+  requireJsonContent,
+  getMissingRequiredFields,
+  respondMissingFields,
+  parseRouteId,
+  respondInvalidId,
+  respondNotFound
+} from './middleware/validation.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BENJA_CACHE_TTL = 120; // TTL recomendado por análisis: 60-120 segundos
-
-const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
-const parseNullableNumber = (value) => {
-  if (value === undefined || value === null || value === '') return null;
-  const number = Number(value);
-  return Number.isNaN(number) ? null : number;
-};
-
-const requireJsonContent = (req, res) => {
-  if (!req.is('application/json')) {
-    res.status(415).json({ error: 'Content-Type debe ser application/json' });
-    return false;
-  }
-  return true;
-};
 
 const deleteKeysByPattern = async (pattern) => {
   try {
@@ -229,8 +224,9 @@ app.post('/api/jugadores', async (req, res) => {
       equipoId
     } = req.body;
 
-    if (!isNonEmptyString(nombre) || !isNonEmptyString(apellido)) {
-      return res.status(400).json({ error: 'nombre y apellido son obligatorios' });
+    const missing = getMissingRequiredFields(req.body, ['nombre', 'apellido']);
+    if (missing) {
+      return respondMissingFields(res, missing);
     }
 
     const sql = `
@@ -290,8 +286,9 @@ app.post('/api/equipos', async (req, res) => {
   try {
     const { nombre, ciudad, tecnico, anioFundacion } = req.body;
 
-    if (!isNonEmptyString(nombre)) {
-      return res.status(400).json({ error: 'nombre es obligatorio para el equipo' });
+    const missing = getMissingRequiredFields(req.body, ['nombre']);
+    if (missing) {
+      return respondMissingFields(res, missing);
     }
 
     const sql = `
@@ -328,6 +325,69 @@ app.post('/api/equipos', async (req, res) => {
     res.status(201).json({ data: equipo });
   } catch (error) {
     console.error('❌ Error POST /api/equipos:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/equipos/:id
+ * Reemplaza los datos de un equipo (requiere nombre).
+ */
+app.put('/api/equipos/:id', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const id = parseRouteId(req.params.id);
+    if (id === null) return respondInvalidId(res, 'equipo');
+
+    const missing = getMissingRequiredFields(req.body, ['nombre']);
+    if (missing) {
+      return respondMissingFields(res, missing);
+    }
+
+    const { nombre, ciudad, tecnico, anioFundacion } = req.body;
+
+    const sql = `
+      UPDATE Equipo
+      SET nombre = $1,
+          ciudad = $2,
+          tecnico = $3,
+          anio_fundacion = $4
+      WHERE id_equipo = $5
+        AND activo = true
+      RETURNING
+        id_equipo AS id,
+        nombre,
+        ciudad,
+        tecnico,
+        anio_fundacion AS "anioFundacion";
+    `;
+
+    const params = [
+      nombre.trim(),
+      ciudad ? ciudad.trim() : null,
+      tecnico ? tecnico.trim() : null,
+      parseNullableNumber(anioFundacion),
+      id
+    ];
+
+    const result = await query(sql, params);
+    const equipo = result.rows[0];
+
+    if (!equipo) {
+      return respondNotFound(res, 'Equipo');
+    }
+
+    await invalidateOldListCaches([
+      'equipos:lista',
+      'posiciones:tabla',
+      'partidos:resumen',
+      'equipos:*:jugadores'
+    ]);
+
+    res.json({ data: equipo });
+  } catch (error) {
+    console.error('❌ Error PUT /api/equipos/:id:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -413,7 +473,8 @@ app.patch('/api/jugadores/:id', async (req, res) => {
   if (!requireJsonContent(req, res)) return;
 
   try {
-    const { id } = req.params;
+    const id = parseRouteId(req.params.id);
+    if (id === null) return respondInvalidId(res, 'jugador');
     const allowedFields = {
       nombre: 'nombre',
       apellido: 'apellido',
@@ -461,12 +522,12 @@ app.patch('/api/jugadores/:id', async (req, res) => {
         id_equipo AS "equipoId";
     `;
 
-    params.push(Number(id));
+    params.push(id);
     const result = await query(sql, params);
     const jugador = result.rows[0];
 
     if (!jugador) {
-      return res.status(404).json({ error: 'Jugador no encontrado o ya inactivo' });
+      return respondNotFound(res, 'Jugador');
     }
 
     await invalidateOldListCaches([
@@ -478,6 +539,85 @@ app.patch('/api/jugadores/:id', async (req, res) => {
     res.json({ data: jugador });
   } catch (error) {
     console.error('❌ Error PATCH /api/jugadores/:id:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUT /api/jugadores/:id
+ * Reemplaza los datos de un jugador (requiere nombre y apellido).
+ */
+app.put('/api/jugadores/:id', async (req, res) => {
+  if (!requireJsonContent(req, res)) return;
+
+  try {
+    const id = parseRouteId(req.params.id);
+    if (id === null) return respondInvalidId(res, 'jugador');
+
+    const missing = getMissingRequiredFields(req.body, ['nombre', 'apellido']);
+    if (missing) {
+      return respondMissingFields(res, missing);
+    }
+
+    const {
+      nombre,
+      apellido,
+      fechaNacimiento,
+      posicion,
+      altura,
+      peso,
+      equipoId
+    } = req.body;
+
+    const sql = `
+      UPDATE Jugador
+      SET nombre = $1,
+          apellido = $2,
+          fecha_nacimiento = $3,
+          posicion = $4,
+          altura = $5,
+          peso = $6,
+          id_equipo = $7
+      WHERE id_jugador = $8
+        AND activo = true
+      RETURNING
+        id_jugador AS id,
+        nombre,
+        apellido,
+        fecha_nacimiento AS "fechaNacimiento",
+        posicion,
+        altura,
+        peso,
+        id_equipo AS "equipoId";
+    `;
+
+    const params = [
+      nombre.trim(),
+      apellido.trim(),
+      fechaNacimiento || null,
+      posicion ? posicion.trim() : null,
+      parseNullableNumber(altura),
+      parseNullableNumber(peso),
+      equipoId != null ? Number(equipoId) : null,
+      id
+    ];
+
+    const result = await query(sql, params);
+    const jugador = result.rows[0];
+
+    if (!jugador) {
+      return respondNotFound(res, 'Jugador');
+    }
+
+    await invalidateOldListCaches([
+      `jugador:${id}`,
+      'equipos:*:jugadores',
+      'estadisticas:maximos-anotadores'
+    ]);
+
+    res.json({ data: jugador });
+  } catch (error) {
+    console.error('❌ Error PUT /api/jugadores/:id:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -567,7 +707,9 @@ app.patch('/api/partidos/:id', async (req, res) => {
  */
 app.delete('/api/jugadores/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseRouteId(req.params.id);
+    if (id === null) return respondInvalidId(res, 'jugador');
+
     const sql = `
       UPDATE Jugador
       SET activo = false
@@ -576,11 +718,11 @@ app.delete('/api/jugadores/:id', async (req, res) => {
       RETURNING id_jugador AS id, nombre, apellido;
     `;
 
-    const result = await query(sql, [Number(id)]);
+    const result = await query(sql, [id]);
     const jugador = result.rows[0];
 
     if (!jugador) {
-      return res.status(404).json({ error: 'Jugador no encontrado o ya inactivo' });
+      return respondNotFound(res, 'Jugador');
     }
 
     await invalidateOldListCaches([
@@ -602,7 +744,9 @@ app.delete('/api/jugadores/:id', async (req, res) => {
  */
 app.delete('/api/equipos/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseRouteId(req.params.id);
+    if (id === null) return respondInvalidId(res, 'equipo');
+
     const sql = `
       UPDATE Equipo
       SET activo = false
@@ -611,11 +755,11 @@ app.delete('/api/equipos/:id', async (req, res) => {
       RETURNING id_equipo AS id, nombre, ciudad;
     `;
 
-    const result = await query(sql, [Number(id)]);
+    const result = await query(sql, [id]);
     const equipo = result.rows[0];
 
     if (!equipo) {
-      return res.status(404).json({ error: 'Equipo no encontrado o ya inactivo' });
+      return respondNotFound(res, 'Equipo');
     }
 
     await invalidateOldListCaches([
@@ -1181,7 +1325,7 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err);
-  res.status(500).json({ error: error.message || 'Error interno' });
+  res.status(500).json({ error: err.message || 'Error interno' });
 });
 
 // ========== INICIAR SERVIDOR ==========
@@ -1202,7 +1346,9 @@ const startServer = async () => {
       console.log(`   GET  /cache-test          - Probar cacheo`);
       console.log(`   GET  /counter             - Incrementar contador`);
       console.log(`   POST /api/equipos        - Crear un equipo nuevo`);
+      console.log(`   PUT  /api/equipos/:id    - Actualizar un equipo`);
       console.log(`   POST /api/jugadores      - Crear un jugador nuevo`);
+      console.log(`   PUT  /api/jugadores/:id  - Actualizar un jugador`);
       console.log(`   POST /api/partidos       - Crear un partido nuevo`);
       console.log(`   POST /player/:id          - Crear jugador`);
       console.log(`   GET  /player/:id          - Obtener jugador desde Redis`);
