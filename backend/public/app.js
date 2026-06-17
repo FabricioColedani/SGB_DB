@@ -19,14 +19,6 @@ const redisRanking = $('redisRanking');
 let posChart = null;
 let topChart = null;
 
-// Estado global para modales
-let currentActionContext = {};
-
-// Modales
-const deletePlayerModal = new bootstrap.Modal($('modalDeletePlayer'));
-const editPointsModal = new bootstrap.Modal($('modalEditPoints'));
-const deleteTeamModal = new bootstrap.Modal($('modalDeleteTeam'));
-
 const setStatus = (meta) => {
   if (!meta) return;
   latencyLabel.textContent = `${meta.durationMs ?? '-'} ms`;
@@ -40,27 +32,7 @@ const setStatus = (meta) => {
   }
 };
 
-// Mostrar notificaciones de acción
-const showActionAlert = (type, title, message) => {
-  const alertEl = $('actionAlert');
-  const alertTitle = $('actionAlertTitle');
-  const alertMsg = $('actionAlertMsg');
-  
-  alertTitle.textContent = title;
-  alertMsg.textContent = message;
-  
-  // Aplicar clase según tipo
-  alertEl.className = `alert alert-dismissible fade show alert-${type}`;
-  alertEl.style.display = 'block';
-  
-  setTimeout(() => {
-    if (alertEl.style.display !== 'none') {
-      alertEl.style.display = 'none';
-    }
-  }, 4000);
-};
-
-const renderTable = (title, rows, context = 'generic') => {
+const renderTable = (title, rows) => {
   mainTitle.textContent = title;
   if (!rows || rows.length === 0) {
     mainContent.innerHTML = '<div class="text-muted">No hay datos para mostrar.</div>';
@@ -68,42 +40,8 @@ const renderTable = (title, rows, context = 'generic') => {
   }
 
   const columns = Object.keys(rows[0]);
-  
-  // Crear encabezados
-  let headerCells = columns.map(c => `<th>${c}</th>`).join('');
-  
-  // Agregar columna de acciones si es necesario
-  let hasActions = false;
-  if (context === 'posiciones' || context === 'equipos' || context === 'anotadores') {
-    headerCells += '<th class="text-center">Acciones</th>';
-    hasActions = true;
-  }
-  
-  const thead = '<div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr>' + headerCells + '</tr></thead><tbody>';
-  
-  // Crear filas con acciones
-  let tbody = rows.map((r, idx) => {
-    let cells = columns.map(c => `<td>${r[c] ?? ''}</td>`).join('');
-    
-    if (hasActions) {
-      const id = r.id || r.ID || r.id_equipo || idx;
-      
-      if (context === 'posiciones' || context === 'equipos') {
-        // Botón para dar de baja equipo
-        cells += `<td class="text-center">
-          <button class="btn btn-sm btn-outline-danger" onclick="prepareDeleteTeam('${id}', '${r.nombre || 'Equipo'}')">Dar de Baja</button>
-        </td>`;
-      } else if (context === 'anotadores') {
-        // Botón para editar puntos de jugador
-        cells += `<td class="text-center">
-          <button class="btn btn-sm btn-outline-warning" onclick="prepareDeletePlayer('${id}', '${r.jugador || r.nombre || 'Jugador'}')">Dar de Baja</button>
-        </td>`;
-      }
-    }
-    
-    return '<tr>' + cells + '</tr>';
-  }).join('');
-  
+  const thead = '<div class="table-responsive"><table class="table table-sm"><thead class="table-light"><tr>' + columns.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+  const tbody = rows.map(r=>'<tr>'+columns.map(c=>`<td>${r[c] ?? ''}</td>`).join('')+'</tr>').join('');
   mainContent.innerHTML = thead + tbody + '</tbody></table></div>';
 };
 
@@ -121,7 +59,7 @@ async function loadPosiciones() {
   try {
     const payload = await fetchWithMeta(`${API_BASE}/posiciones`);
     setStatus(payload.meta);
-    renderTable('Tabla de Posiciones', payload.data, 'posiciones');
+    renderTable('Tabla de Posiciones', payload.data);
     // chart
     const labels = payload.data.map(r=>r.nombre);
     const puntos = payload.data.map(r=>Number(r.puntos||0));
@@ -136,7 +74,7 @@ async function loadTopAnotadores() {
   try {
     const payload = await fetchWithMeta(`${API_BASE}/estadisticas/maximos-anotadores`);
     setStatus(payload.meta);
-    renderTable('Máximos Anotadores - Top 10', payload.data, 'anotadores');
+    renderTable('Máximos Anotadores - Top 10', payload.data);
     const labels = payload.data.map(r=>r.jugador);
     const pts = payload.data.map(r=>Number(r.puntos_totales||0));
     if (topChart) topChart.destroy();
@@ -150,7 +88,7 @@ async function loadEquipos() {
   try {
     const payload = await fetchWithMeta(`${API_BASE}/equipos`);
     setStatus(payload.meta);
-    renderTable('Lista de Equipos', payload.data, 'equipos');
+    renderTable('Lista de Equipos', payload.data);
   } catch (e) {
     mainContent.innerHTML = `<div class="text-danger">Error: ${e.message}</div>`;
   }
@@ -244,59 +182,6 @@ $('btnRefreshHealth').addEventListener('click', async ()=>{
     setStatus({ durationMs: '-', cacheHit: false, redisOnline: payload.redisOnline });
   } catch(e) { setStatus({ durationMs: '-', cacheHit:false, redisOnline:false }); }
 });
-
-// ========== FUNCIONES DE ACCIÓN ==========
-
-// Preparar eliminación de jugador
-function prepareDeletePlayer(playerId, playerName) {
-  currentActionContext = { type: 'player', id: playerId, name: playerName };
-  $('deletePlayerInfo').innerHTML = `<strong>${playerName}</strong> (ID: ${playerId})`;
-  deletePlayerModal.show();
-}
-
-// Preparar eliminación de equipo
-function prepareDeleteTeam(teamId, teamName) {
-  currentActionContext = { type: 'team', id: teamId, name: teamName };
-  $('deleteTeamInfo').innerHTML = `<strong>${teamName}</strong> (ID: ${teamId})`;
-  deleteTeamModal.show();
-}
-
-// Confirmar y ejecutar la baja
-async function confirmDelete() {
-  if (!currentActionContext.type) return;
-  
-  const { type, id, name } = currentActionContext;
-  const endpoint = type === 'player' ? `/api/jugadores/${id}` : `/api/equipos/${id}`;
-  
-  try {
-    const res = await fetch(endpoint, { method: 'DELETE' });
-    const payload = await res.json();
-    
-    if (res.ok) {
-      showActionAlert('success', '✓ Éxito', `${name} ha sido dado de baja correctamente.`);
-      
-      // Refrescar tablas
-      setTimeout(() => {
-        loadPosiciones();
-        loadTopAnotadores();
-        loadEquipos();
-      }, 500);
-      
-      if (type === 'player') {
-        deletePlayerModal.hide();
-      } else {
-        deleteTeamModal.hide();
-      }
-    } else {
-      showActionAlert('danger', '✗ Error', payload.error || 'No se pudo completar la acción.');
-    }
-  } catch (e) {
-    showActionAlert('danger', '✗ Error', `Error: ${e.message}`);
-  }
-}
-
-$('btnConfirmDelete').addEventListener('click', confirmDelete);
-$('btnConfirmDeleteTeam').addEventListener('click', confirmDelete);
 
 $('quickPos').addEventListener('click', loadPosiciones);
 $('quickTop').addEventListener('click', loadTopAnotadores);
